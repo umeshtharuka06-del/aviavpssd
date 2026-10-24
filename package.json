@@ -1,0 +1,24 @@
+{
+  "name": "aviator-system",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Aviator Chrome extension + private VPS backend + admin site (activation codes)",
+  "workspaces": [
+    "shared/contracts",
+    "backend",
+    "admin-web",
+    "extension"
+  ],
+  "scripts": {
+    "build:contracts": "npm run build -w @aviator/contracts",
+    "typecheck": "npm run build:contracts && npm run typecheck --workspaces --if-present",
+    "test": "npm run build:contracts && npm run test --workspaces --if-present",
+    "test:backend": "npm run build:contracts && npm test -w @aviator/backend",
+    "test:admin": "npm run build:contracts && npm test -w @aviator/admin-web",
+    "test:extension": "npm run build:contracts && npm test -w @aviator/extension",
+    "test:secrets": "node scripts/check-secret-separation.mjs"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

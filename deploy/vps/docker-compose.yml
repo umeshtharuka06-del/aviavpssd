@@ -1,0 +1,106 @@
+# Production stack for the VPS. Run from this directory:  docker compose up -d --build
+#
+#   caddy (80/443, public) ──edge──▶ api (8080, not published) ──db──▶ postgres (5432, NOT published)
+#                                            retention-worker ──db──┘
+#
+# Secrets come from ./.env (chmod 600, never committed). PostgreSQL has no published port and
+# sits on an internal-only network: it is unreachable from the internet and from the host's
+# public interfaces.
+name: aviator
+
+x-backend: &backend
+  image: aviator-backend:${IMAGE_TAG:-latest}
+  env_file: .env
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging: &logging
+    driver: json-file
+    options: { max-size: '10m', max-file: '5' } # bounded container logs (≈50 MB per service)
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aviator}
+      POSTGRES_USER: ${POSTGRES_USER:-aviator_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      TZ: UTC
+    # Never log statements (they could contain history values); log only errors and slow-query
+    # durations without parameters.
+    command: ['postgres', '-c', 'log_statement=none', '-c', 'log_min_duration_statement=-1', '-c', 'timezone=UTC']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [db]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  migrate:
+    <<: *backend
+    build: { context: ../.., dockerfile: backend/Dockerfile }
+    command: ['node', 'dist/src/database/cli.js', 'migrate']
+    restart: 'no'
+    networks: [db]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  api:
+    <<: *backend
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '8080'
+      TRUST_PROXY: 172.30.10.0/24 # only Caddy's network may set X-Forwarded-For
+    expose: ['8080']
+    networks: [db, edge]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  retention-worker:
+    <<: *backend
+    command: ['node', 'dist/src/workers/retention-worker.js']
+    environment:
+      NODE_ENV: production
+    networks: [db]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    # Unhealthy if the last successful pass is older than 3 intervals or any observation is older
+    # than 12 h + grace. `docker compose ps` / your monitoring should alert on "unhealthy".
+    healthcheck:
+      test: ['CMD', 'node', 'dist/src/database/cli.js', 'retention-status']
+      interval: 5m
+      timeout: 30s
+      retries: 2
+      start_period: 2m
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ../reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on: [api]
+    logging: *logging
+
+networks:
+  db:
+    internal: true # no route to/from the outside world
+  edge:
+    ipam:
+      config: [{ subnet: 172.30.10.0/24 }]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
