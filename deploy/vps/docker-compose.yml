@@ -79,7 +79,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: '8080'
-      TRUST_PROXY: 172.30.10.0/24 # only Caddy's network may set X-Forwarded-For
+      TRUST_PROXY: 10.200.0.0/24 # only Caddy's network may set X-Forwarded-For (must equal the edge subnet)
     expose: ['8080']
     networks: [db, edge]
     depends_on:
@@ -126,7 +126,9 @@ networks:
     internal: true # no route to/from the outside world
   edge:
     ipam:
-      config: [{ subnet: 172.30.10.0/24 }]
+      # Outside Docker's default pools (172.17-31.0.0/16, 192.168.0.0/16) so it cannot collide
+      # with networks other stacks create automatically.
+      config: [{ subnet: 10.200.0.0/24 }]
 
 volumes:
   pgdata:
