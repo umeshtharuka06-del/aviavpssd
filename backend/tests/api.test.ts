@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { AnalysisResponseSchema, ErrorBodySchema } from '@aviator/contracts';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/api/app.js';
@@ -111,6 +113,16 @@ describe('configuration', () => {
     expect(() => loadEnv({ ...base, NODE_ENV: 'production', ACCEPTED_SITE_IDS: 'onexbet,devfixture' })).toThrow(/devfixture/);
   });
 
+  it('accepts devfixture in development mode', () => {
+    const env = loadEnv({ ...base, NODE_ENV: 'development', ACCEPTED_SITE_IDS: 'onexbet,devfixture' });
+    expect(env.ACCEPTED_SITE_IDS).toContain('devfixture');
+  });
+
+  it('Zod default for ACCEPTED_SITE_IDS does not contain devfixture', () => {
+    const env = loadEnv({ ...base });
+    expect(env.ACCEPTED_SITE_IDS).not.toContain('devfixture');
+  });
+
   it('allows mock and statistical analysis providers, rejects unknown', () => {
     loadEnv({ ...base, ANALYSIS_PROVIDER: 'mock' });
     loadEnv({ ...base, ANALYSIS_PROVIDER: 'statistical' });
@@ -211,5 +223,35 @@ describe('site allow-list', () => {
     } finally {
       await h2.close();
     }
+  });
+});
+
+describe('deployment templates must not contain devfixture', () => {
+  const root = resolve(import.meta.dirname, '../..');
+
+  function extractAcceptedSiteIds(text: string): string | undefined {
+    const match = text.match(/ACCEPTED_SITE_IDS[=:]([^\n]+)/);
+    return match?.[1]?.trim();
+  }
+
+  it('backend/.env.example', () => {
+    const content = readFileSync(resolve(root, 'backend/.env.example'), 'utf8');
+    const value = extractAcceptedSiteIds(content);
+    expect(value).toBeDefined();
+    expect(value).not.toContain('devfixture');
+  });
+
+  it('deploy/vps/.env.example', () => {
+    const content = readFileSync(resolve(root, 'deploy/vps/.env.example'), 'utf8');
+    const value = extractAcceptedSiteIds(content);
+    expect(value).toBeDefined();
+    expect(value).not.toContain('devfixture');
+  });
+
+  it('deploy/vps/docker-compose.yml Compose default', () => {
+    const content = readFileSync(resolve(root, 'deploy/vps/docker-compose.yml'), 'utf8');
+    const value = extractAcceptedSiteIds(content);
+    expect(value).toBeDefined();
+    expect(value).not.toContain('devfixture');
   });
 });
