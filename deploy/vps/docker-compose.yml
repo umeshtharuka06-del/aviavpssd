@@ -3,14 +3,34 @@
 #   caddy (80/443, public) ──edge──▶ api (8080, not published) ──db──▶ postgres (5432, NOT published)
 #                                            retention-worker ──db──┘
 #
-# Secrets come from ./.env (chmod 600, never committed). PostgreSQL has no published port and
-# sits on an internal-only network: it is unreachable from the internet and from the host's
-# public interfaces.
+# Every ${VAR} below is filled in by Compose interpolation: from the Portainer stack's
+# "Environment variables" when deployed through Portainer, or from ./.env (chmod 600, never
+# committed) when run with plain `docker compose`. No env file is required to exist.
+# PostgreSQL has no published port and sits on an internal-only network: it is unreachable from
+# the internet and from the host's public interfaces.
 name: aviator
+
+# Runtime environment of the backend containers (validated by backend/src/config/env.ts).
+# Optional values default to the same defaults as env.ts.
+x-backend-env: &backend-env
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL (postgres://USER:PASSWORD@postgres:5432/DB)}
+  CODE_PEPPER: ${CODE_PEPPER:?set CODE_PEPPER}
+  DEVICE_PEPPER: ${DEVICE_PEPPER:?set DEVICE_PEPPER}
+  IP_HASH_PEPPER: ${IP_HASH_PEPPER:?set IP_HASH_PEPPER}
+  ADMIN_SERVICE_KEY: ${ADMIN_SERVICE_KEY:?set ADMIN_SERVICE_KEY}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+  DEFAULT_DEVICE_LIMIT: ${DEFAULT_DEVICE_LIMIT:-5}
+  CUSTOMER_SESSION_TTL_HOURS: ${CUSTOMER_SESSION_TTL_HOURS:-168}
+  ADMIN_SESSION_TTL_HOURS: ${ADMIN_SESSION_TTL_HOURS:-8}
+  ACCEPTED_SITE_IDS: ${ACCEPTED_SITE_IDS:-onexbet,melbet,starz888}
+  ACCEPTED_SITE_DOMAINS: ${ACCEPTED_SITE_DOMAINS:-}
+  ANALYSIS_PROVIDER: ${ANALYSIS_PROVIDER:-mock}
+  RETENTION_INTERVAL_SECONDS: ${RETENTION_INTERVAL_SECONDS:-300}
+  SECURITY_EVENT_RETENTION_DAYS: ${SECURITY_EVENT_RETENTION_DAYS:-90}
 
 x-backend: &backend
   image: aviator-backend:${IMAGE_TAG:-latest}
-  env_file: .env
   restart: unless-stopped
   read_only: true
   tmpfs: [/tmp]
@@ -27,7 +47,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aviator}
       POSTGRES_USER: ${POSTGRES_USER:-aviator_app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       TZ: UTC
     # Never log statements (they could contain history values); log only errors and slow-query
     # durations without parameters.
@@ -44,14 +64,18 @@ services:
   migrate:
     <<: *backend
     build: { context: ../.., dockerfile: backend/Dockerfile }
+    # Rebuild from the checked-out code on every deploy (Portainer redeploys may not pass --build).
+    pull_policy: build
     command: ['node', 'dist/src/database/cli.js', 'migrate']
     restart: 'no'
+    environment: *backend-env
     networks: [db]
     depends_on: { postgres: { condition: service_healthy } }
 
   api:
     <<: *backend
     environment:
+      <<: *backend-env
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: '8080'
@@ -65,6 +89,7 @@ services:
     <<: *backend
     command: ['node', 'dist/src/workers/retention-worker.js']
     environment:
+      <<: *backend-env
       NODE_ENV: production
     networks: [db]
     depends_on:
@@ -79,14 +104,17 @@ services:
       start_period: 2m
 
   caddy:
-    image: caddy:2.10-alpine
+    # The Caddyfile is baked into the image instead of bind-mounted: Portainer Git stacks are
+    # cloned inside the Portainer container, so a relative bind-mount path does not exist on the host.
+    build: { context: ../reverse-proxy }
+    image: aviator-caddy:${IMAGE_TAG:-latest}
+    pull_policy: build
     restart: unless-stopped
     ports: ['80:80', '443:443', '443:443/udp']
     environment:
-      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
     volumes:
-      - ../reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [edge]
