@@ -5,10 +5,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY shared/contracts/package.json shared/contracts/
 COPY backend/package.json backend/
-# The lockfile lists every workspace; their manifests must exist even though they are not installed.
-COPY admin-web/package.json admin-web/
-COPY extension/package.json extension/
-RUN npm ci --workspace @aviator/backend --workspace @aviator/contracts --include-workspace-root=false --ignore-scripts
+# Only these two workspaces go into the image. The admin site (Vercel) and the extension are
+# deployed separately and may be absent from the build context, so narrow the workspace list;
+# npm then drops their lockfile entries and keeps the locked versions of everything else.
+RUN node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync("package.json","utf8"));p.workspaces=["shared/contracts","backend"];fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")' \
+ && npm install --ignore-scripts --no-audit --no-fund
 COPY shared/contracts shared/contracts
 COPY backend backend
 RUN npm run build -w @aviator/contracts && npm run build -w @aviator/backend \
