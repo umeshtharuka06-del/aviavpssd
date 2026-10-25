@@ -43,8 +43,8 @@ Keep an offline copy of these values (password manager). A missing required vari
 #    another stack already owns the port and the API must then go behind that proxy instead.
 sudo ss -ltnp '( sport = :80 or sport = :443 )'
 
-# 2. The stack's "edge" network uses 172.30.10.0/24. No existing network may overlap it
-#    (e.g. 172.30.0.0/16). If one does, pick a free /24 and change BOTH `subnet` and
+# 2. The stack's "edge" network uses 10.200.0.0/24. No existing network or host route may overlap
+#    it (also run `ip -4 route`). If one does, pick a free /24 and change BOTH `subnet` and
 #    `TRUST_PROXY` in docker-compose.yml to it.
 docker network inspect $(docker network ls -q) --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'
 

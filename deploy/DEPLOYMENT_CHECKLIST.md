@@ -33,8 +33,9 @@ Docs: [VPS Deployment Guide](../docs/VPS_DEPLOYMENT.md)
 
 ### Caddyfile
 
-- [ ] Edit `deploy/reverse-proxy/Caddyfile`: replace `api.example.com` with your domain
-- [ ] Verify the `reverse_proxy` target is `api:8080` (default, no change needed)
+- [ ] No edit needed: the Caddyfile reads `API_DOMAIN` and `ACME_EMAIL` from the environment and is built into the `aviator-caddy` image (`deploy/reverse-proxy/Dockerfile`)
+- [ ] Ports 80/443 are free on the VPS and reachable from the internet; DNS for `API_DOMAIN` resolves to the VPS
+- [ ] Portainer users: follow the "Portainer (Git repository stack)" section of the VPS guide instead of creating `.env`
 
 ### First Start
 

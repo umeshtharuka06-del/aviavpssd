@@ -3,8 +3,9 @@
 | Path | Purpose |
 |---|---|
 | `vps/docker-compose.yml` | postgres (internal network, no port), migrate, api, retention-worker, caddy |
-| `vps/.env.example` | placeholders; the real `.env` is created on the VPS only |
+| `vps/.env.example` | placeholders and the full variable list; with Portainer these are stack environment variables, otherwise the real `.env` is created on the VPS only |
 | `reverse-proxy/Caddyfile` | HTTPS, body limit, security headers, header-free access logs |
+| `reverse-proxy/Dockerfile` | bakes the Caddyfile into the `aviator-caddy` image (no bind mount, works with Portainer Git stacks) |
 | `scripts/generate-secrets.sh` | creates `vps/.env` with random secrets (never overwrites) |
 | `scripts/create-admin.sh` | creates or resets an admin (password via prompt) |
 | `scripts/backup.sh` / `restore.sh` | `pg_dump` without history rows and 14-day rotation / guarded restore |
