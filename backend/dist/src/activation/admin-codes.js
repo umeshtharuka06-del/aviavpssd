@@ -16,7 +16,7 @@ export async function generateCodes(ctx, admin, input, ip) {
             const c = generateCode(ctx.env.CODE_PEPPER);
             await db.query(`INSERT INTO activation_codes
            (public_id, code_hash, code_hint, plan, duration_days, device_limit, redeem_by, note, created_at, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [c.publicId, c.hash, c.hint, input.plan, durationDays(input.plan), input.deviceLimit, redeemBy, input.note || null, now, admin.adminId]);
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, [c.publicId, c.hash, c.hint, input.plan, durationDays(input.plan), input.deviceLimit ?? ctx.env.DEFAULT_DEVICE_LIMIT, redeemBy, input.note || null, now, admin.adminId]);
             const view = (await getCodeView(db, c.publicId, now));
             codes.push({ ...view, code: c.plaintext });
         }
@@ -24,7 +24,7 @@ export async function generateCodes(ctx, admin, input, ip) {
             type: 'admin.code_generated',
             actor: `admin:${admin.adminId}`,
             ip,
-            detail: { plan: input.plan, quantity: input.quantity, ids: codes.map((c) => c.id) },
+            detail: { plan: input.plan, quantity: input.quantity, deviceLimit: input.deviceLimit ?? ctx.env.DEFAULT_DEVICE_LIMIT, ids: codes.map((c) => c.id) },
         });
         return { codes };
     });

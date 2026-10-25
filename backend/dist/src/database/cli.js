@@ -4,10 +4,15 @@
  *   migrate                         apply pending SQL migrations
  *   create-admin --email <email>    create an admin (password read from stdin, or ADMIN_PASSWORD)
  *   retention-status                print retention worker health; exit 1 if unhealthy
+ *   raise-device-limits --to 5 [--apply]
+ *                                   raise the device limit of existing, non-revoked codes whose
+ *                                   limit is lower (dry run without --apply; never lowers limits,
+ *                                   never changes activations or expiry dates)
  */
 import { createInterface } from 'node:readline';
 import { loadEnv } from '../config/env.js';
 import { hashPassword } from '../auth/admin-auth.js';
+import { raiseDeviceLimits } from '../activation/devices.js';
 import { retentionHealth } from '../retention/purge.js';
 import { migrate } from './migrate.js';
 import { createPool } from './pool.js';
@@ -47,6 +52,17 @@ async function main() {
                 console.log(`Admin ${email} created/updated.`);
                 break;
             }
+            case 'raise-device-limits': {
+                const i = args.indexOf('--to');
+                const to = Number(i >= 0 ? args[i + 1] : NaN);
+                const apply = args.includes('--apply');
+                const env = loadEnv();
+                const r = await raiseDeviceLimits(pool, env.IP_HASH_PEPPER, to, apply);
+                console.log(r.apply
+                    ? `Raised the device limit to ${to} for ${r.codes} existing code(s). Expiry dates and activations unchanged.`
+                    : `DRY RUN: ${r.codes} existing code(s) have a device limit below ${to}. Re-run with --apply to raise them.`);
+                break;
+            }
             case 'retention-status': {
                 const env = loadEnv();
                 const h = await retentionHealth(pool, env.RETENTION_INTERVAL_SECONDS);
@@ -56,7 +72,7 @@ async function main() {
                 break;
             }
             default:
-                console.error('Commands: migrate | create-admin --email <email> | retention-status');
+                console.error('Commands: migrate | create-admin --email <email> | retention-status | raise-device-limits --to <n> [--apply]');
                 process.exitCode = 2;
         }
     }

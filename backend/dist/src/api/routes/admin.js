@@ -1,5 +1,6 @@
-import { AdminLoginRequestSchema, CodeIdSchema, GenerateCodesRequestSchema, ListCodesQuerySchema, ResetDevicesRequestSchema, RevokeCodeRequestSchema, HISTORY_RETENTION_HOURS, } from '@aviator/contracts';
+import { AdminLoginRequestSchema, CodeIdSchema, DeviceIdParamSchema, MAX_DEVICE_LIMIT, RevokeDeviceRequestSchema, SetDeviceLimitRequestSchema, GenerateCodesRequestSchema, ListCodesQuerySchema, ResetDevicesRequestSchema, RevokeCodeRequestSchema, HISTORY_RETENTION_HOURS, } from '@aviator/contracts';
 import { codeStats, generateCodes, listCodes, resetDevices, revokeCode } from '../../activation/admin-codes.js';
+import { listDevices, revokeDevice, setDeviceLimit } from '../../activation/devices.js';
 import { ADMIN_CLIENT_IP_HEADER, ADMIN_SERVICE_KEY_HEADER, adminClientIp, adminLogin, adminLogout, authenticateAdmin, verifyServiceKey, } from '../../auth/admin-auth.js';
 import { retentionHealth } from '../../retention/purge.js';
 import { AppError, parseOrThrow } from '../errors.js';
@@ -49,6 +50,24 @@ export const adminRoutes = (ctx) => async (app) => {
         const id = parseId(req.params.id);
         const body = parseOrThrow(ResetDevicesRequestSchema, req.body);
         return { code: await resetDevices(ctx, admin(req), id, body.reason, ip(req)) };
+    });
+    app.get('/settings', async () => ({
+        defaultDeviceLimit: ctx.env.DEFAULT_DEVICE_LIMIT,
+        maxDeviceLimit: MAX_DEVICE_LIMIT,
+    }));
+    app.get('/codes/:id/devices', async (req) => listDevices(ctx, parseId(req.params.id)));
+    app.post('/codes/:id/devices/:deviceId/revoke', async (req) => {
+        const id = parseId(req.params.id);
+        const device = DeviceIdParamSchema.safeParse(req.params.deviceId);
+        if (!device.success)
+            throw new AppError('NOT_FOUND', 'Device not found for this code.');
+        const body = parseOrThrow(RevokeDeviceRequestSchema, req.body);
+        return revokeDevice(ctx, admin(req), id, device.data, body.reason, ip(req));
+    });
+    app.post('/codes/:id/device-limit', async (req) => {
+        const id = parseId(req.params.id);
+        const body = parseOrThrow(SetDeviceLimitRequestSchema, req.body);
+        return setDeviceLimit(ctx, admin(req), id, body.deviceLimit, body.reason, ip(req));
     });
     app.get('/system/retention', async () => {
         const h = await retentionHealth(ctx.pool, ctx.env.RETENTION_INTERVAL_SECONDS);

@@ -1,4 +1,5 @@
 import { AppError } from '../api/errors.js';
+import { isSiteAccepted } from '../config/env.js';
 import { withTransaction } from '../database/pool.js';
 /**
  * Stores completed-round observations as TEMPORARY history.
@@ -9,7 +10,7 @@ import { withTransaction } from '../database/pool.js';
  *  - Raw observations are never written to logs or to any permanent table.
  */
 export async function ingestHistory(ctx, auth, input) {
-    if (!ctx.env.ACCEPTED_SITE_IDS.includes(input.siteId)) {
+    if (!isSiteAccepted(ctx.env, input.siteId)) {
         throw new AppError('VALIDATION_FAILED', 'This site is not supported.', { issues: [{ path: 'siteId', message: 'unsupported site' }] });
     }
     const refs = input.observations.map((o) => o.roundRef).filter((r) => !!r);

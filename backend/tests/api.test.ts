@@ -111,8 +111,11 @@ describe('configuration', () => {
     expect(() => loadEnv({ ...base, NODE_ENV: 'production', ACCEPTED_SITE_IDS: 'onexbet,devfixture' })).toThrow(/devfixture/);
   });
 
-  it('only allows the mock analysis provider in this phase', () => {
+  it('allows mock and statistical analysis providers, rejects unknown', () => {
+    loadEnv({ ...base, ANALYSIS_PROVIDER: 'mock' });
+    loadEnv({ ...base, ANALYSIS_PROVIDER: 'statistical' });
     expect(() => loadEnv({ ...base, ANALYSIS_PROVIDER: 'live' })).toThrow();
+    expect(() => loadEnv({ ...base, ANALYSIS_PROVIDER: 'bogus' })).toThrow();
   });
 });
 

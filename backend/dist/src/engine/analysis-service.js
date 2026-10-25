@@ -1,5 +1,6 @@
 import { HISTORY_RETENTION_HOURS } from '@aviator/contracts';
 import { AppError } from '../api/errors.js';
+import { isSiteAccepted } from '../config/env.js';
 const MAX_OBSERVATIONS_FOR_ANALYSIS = 5_000;
 const PROVIDER_TIMEOUT_MS = 5_000;
 /**
@@ -8,7 +9,7 @@ const PROVIDER_TIMEOUT_MS = 5_000;
  * modifies or deletes observations, so its success or failure has no effect on retention.
  */
 export async function runAnalysis(ctx, siteId) {
-    if (!ctx.env.ACCEPTED_SITE_IDS.includes(siteId)) {
+    if (!isSiteAccepted(ctx.env, siteId)) {
         throw new AppError('VALIDATION_FAILED', 'This site is not supported.', { issues: [{ path: 'siteId', message: 'unsupported site' }] });
     }
     const now = ctx.now();

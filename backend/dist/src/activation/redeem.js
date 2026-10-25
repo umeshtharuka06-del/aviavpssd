@@ -1,7 +1,7 @@
 import { AppError } from '../api/errors.js';
 import { issueCustomerSession } from '../auth/customer-session.js';
 import { withTransaction } from '../database/pool.js';
-import { hmacSha256 } from '../security/crypto.js';
+import { hmacSha256, randomBase32 } from '../security/crypto.js';
 import { recordSecurityEvent } from '../security/events.js';
 import { computeExpiry, SUBSCRIPTION_COLUMNS, toSubscriptionView } from '../subscriptions/subscription.js';
 import { hashCodeInput } from './codes.js';
@@ -11,17 +11,18 @@ export function hashDeviceId(pepper, deviceId) {
 /**
  * Redeems an activation code for a device.
  *
- * Concurrency: the code row is locked with SELECT … FOR UPDATE, so concurrent attempts on the
- * same code are serialized. subscriptions.activation_code_id is UNIQUE (one subscription per
- * code) and device_activations has a partial UNIQUE index on (subscription, device) for
- * active slots, so even a logic error cannot create a second subscription or duplicate slot.
+ * Concurrency (three layers):
+ *  - the code row is locked with SELECT … FOR UPDATE, so attempts on one code are serialized;
+ *  - subscriptions.activation_code_id is UNIQUE (one subscription per code) and a partial UNIQUE
+ *    index allows one ACTIVE slot per (subscription, device) — no duplicate device records;
+ *  - a database trigger (migration 0002) refuses any active slot beyond device_limit.
  *
  * Rules:
  *  - First redemption starts the subscription now (server clock) for the plan's duration.
- *  - A redeemed code can never start a second subscription period.
- *  - Re-entering a redeemed code on the SAME device restores access (new session).
+ *  - A redeemed code can never start a second subscription period or change its expiry.
+ *  - Re-entering a redeemed code on the SAME device restores access (new session, same slot).
  *  - Re-entering it on ANOTHER device succeeds only while active devices < device_limit;
- *    otherwise CODE_ALREADY_USED. Freeing slots requires an audited admin device reset.
+ *    otherwise DEVICE_LIMIT_REACHED. Freeing slots requires an audited admin action.
  */
 export async function redeemCode(ctx, input, ip) {
     const now = ctx.now();
@@ -50,7 +51,7 @@ export async function redeemCode(ctx, input, ip) {
                 const sub = await db.query(`INSERT INTO subscriptions (activation_code_id, plan, activated_at, expires_at)
            VALUES ($1, $2, $3, $4) RETURNING id`, [code.id, code.plan, now, expiresAt]);
                 subscriptionId = sub.rows[0].id;
-                deviceActivationId = await insertDevice(db, subscriptionId, deviceHash, now);
+                deviceActivationId = await insertDevice(db, subscriptionId, deviceHash, now, input.deviceLabel);
                 result = 'activated';
             }
             else {
@@ -68,18 +69,18 @@ export async function redeemCode(ctx, input, ip) {
             WHERE subscription_id = $1 AND device_hash = $2 AND deactivated_at IS NULL`, [s.id, deviceHash]);
                 if (existing.rows[0]) {
                     deviceActivationId = existing.rows[0].id;
-                    await db.query('UPDATE device_activations SET last_seen_at = $2 WHERE id = $1', [deviceActivationId, now]);
+                    await db.query('UPDATE device_activations SET last_seen_at = $2, device_label = COALESCE($3, device_label) WHERE id = $1', [
+                        deviceActivationId,
+                        now,
+                        input.deviceLabel || null,
+                    ]);
                     result = 'device_restored';
                 }
                 else {
                     const active = await db.query('SELECT count(*)::int AS n FROM device_activations WHERE subscription_id = $1 AND deactivated_at IS NULL', [s.id]);
-                    if (active.rows[0].n >= code.device_limit) {
-                        throw new AppError('CODE_ALREADY_USED', 'This activation code is already in use on another device.', {
-                            reason: 'device_limit_reached',
-                            deviceLimit: code.device_limit,
-                        });
-                    }
-                    deviceActivationId = await insertDevice(db, s.id, deviceHash, now);
+                    if (active.rows[0].n >= code.device_limit)
+                        throw deviceLimitError(code.device_limit, active.rows[0].n);
+                    deviceActivationId = await insertDevice(db, s.id, deviceHash, now, input.deviceLabel);
                     result = 'device_added';
                 }
             }
@@ -94,7 +95,9 @@ export async function redeemCode(ctx, input, ip) {
             return { result, session, subscription: toSubscriptionView(view.rows[0], now) };
         });
     }
-    catch (err) {
+    catch (caught) {
+        // The database guard (trigger) is the last line of defence; report it like the app check.
+        const err = caught.message === 'device_limit_exceeded' ? deviceLimitError() : caught;
         if (err instanceof AppError) {
             await recordSecurityEvent(ctx.pool, ctx.env.IP_HASH_PEPPER, {
                 type: 'customer.redeem_failed',
@@ -105,8 +108,12 @@ export async function redeemCode(ctx, input, ip) {
         throw err;
     }
 }
-async function insertDevice(db, subscriptionId, deviceHash, now) {
-    const { rows } = await db.query(`INSERT INTO device_activations (subscription_id, device_hash, activated_at, last_seen_at)
-     VALUES ($1, $2, $3, $3) RETURNING id`, [subscriptionId, deviceHash, now]);
+function deviceLimitError(limit, inUse) {
+    const n = limit ?? 'all';
+    return new AppError('DEVICE_LIMIT_REACHED', `This subscription is already active on the maximum number of devices (${n}). Remove a device you no longer use (ask the administrator) and try again.`, { reason: 'device_limit_reached', ...(limit !== undefined ? { deviceLimit: limit, devicesInUse: inUse ?? limit } : {}) });
+}
+async function insertDevice(db, subscriptionId, deviceHash, now, label) {
+    const { rows } = await db.query(`INSERT INTO device_activations (subscription_id, device_hash, activated_at, last_seen_at, public_id, device_label)
+     VALUES ($1, $2, $3, $3, $4, $5) RETURNING id`, [subscriptionId, deviceHash, now, `dv_${randomBase32(16)}`, label || null]);
     return rows[0].id;
 }

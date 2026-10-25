@@ -55,8 +55,8 @@ const EnvSchema = z
       .default('')
       .transform((v) => v.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)),
 
-    /** Only the clearly labelled mock provider exists in this phase. */
-    ANALYSIS_PROVIDER: z.literal('mock').default('mock'),
+    /** Which analysis provider to use: "mock" (test data) or "statistical" (real descriptive stats). */
+    ANALYSIS_PROVIDER: z.enum(['mock', 'statistical']).default('mock'),
 
     RETENTION_INTERVAL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
     SECURITY_EVENT_RETENTION_DAYS: z.coerce.number().int().min(7).max(365).default(90),

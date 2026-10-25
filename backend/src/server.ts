@@ -2,10 +2,14 @@ import { buildApp } from './api/app.js';
 import { loadEnv } from './config/env.js';
 import { createPool } from './database/pool.js';
 import { MockAnalysisProvider } from './engine/mock-provider.js';
+import { StatisticalAnalysisProvider } from './engine/statistical-provider.js';
 
 const env = loadEnv();
 const pool = createPool(env.DATABASE_URL, env.DATABASE_POOL_MAX);
-const app = await buildApp({ env, pool, now: () => new Date(), analysisProvider: new MockAnalysisProvider() });
+const analysisProvider = env.ANALYSIS_PROVIDER === 'statistical'
+  ? new StatisticalAnalysisProvider()
+  : new MockAnalysisProvider();
+const app = await buildApp({ env, pool, now: () => new Date(), analysisProvider });
 
 const shutdown = async () => {
   await app.close();
