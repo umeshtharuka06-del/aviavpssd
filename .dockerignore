@@ -1,0 +1,13 @@
+# Build context for backend/Dockerfile is the repo root.
+**/node_modules
+**/.env
+**/.env.*
+!**/.env.example
+**/.local-pg
+**/dist
+**/.next
+docs
+.git
+# Deployed separately (Vercel / Chrome); not needed by the backend image.
+admin-web
+extension
