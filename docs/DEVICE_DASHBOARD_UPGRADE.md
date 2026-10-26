@@ -1,5 +1,9 @@
 # Device Dashboard Upgrade — Deployment & Delivery
 
+> **Superseded in part by [COMPACT_DASHBOARD.md](COMPACT_DASHBOARD.md):** the rolling windows, Wilson
+> intervals, recent-vs-baseline patterns and signal report described below were removed and replaced by a
+> single `summary` field. Device isolation, migration `0003` and the side panel remain as described here.
+
 This upgrade turns the per-site statistics into a **device-scoped, empirical analysis dashboard**
 (Phases 2–9). It is **code-complete and tested locally** (backend 200 tests, extension 188 + 6
 gated-skipped, admin 13; typecheck clean; production builds succeed). **Nothing has been deployed.**

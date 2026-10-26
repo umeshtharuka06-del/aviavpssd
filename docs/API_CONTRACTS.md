@@ -54,6 +54,27 @@ Authentication: `Authorization: Bearer <session token>` (43-char base64url), exc
 
 Clients must show a "test data" label whenever `isTestData` is true. `engine` never exposes implementation details.
 
+The live (`statistical`) provider adds an optional **`summary`** — this device's own observed rounds on this site (12 h window). It is descriptive history, never a next-round prediction:
+
+```json
+"summary": { "scope": "device", "sampleSize": 1234, "minSampleSize": 100, "sufficiency": "sufficient",
+  "thresholds": [ { "threshold": 2, "count": 600, "frequency": 0.4862 },
+                  { "threshold": 5, "count": 200, "frequency": 0.1621 },
+                  { "threshold": 10, "count": 99, "frequency": 0.0802 } ],
+  "below2x": { "threshold": 2, "count": 634, "frequency": 0.5138 },
+  "averageMultiplier": 3.46, "invalidExcluded": 0,
+  "latestRoundAt": "…", "freshnessSeconds": 14, "isHistoricalOnly": true }
+```
+
+| Field | Formula (n = valid rounds: finite multiplier within 1–1,000,000) |
+|---|---|
+| `thresholds[].frequency` | count(multiplier ≥ T) / n — "historical frequency", shown ×100 as % |
+| `below2x.frequency` | count(multiplier < 2) / n (= 1 − frequency(≥2×)) — the combined historical indicator |
+| `averageMultiplier` | sum(multiplier) / n — "historical average multiplier" |
+| `sufficiency` | `no_data` (n = 0) · `collecting` (n < `minSampleSize`) · `sufficient` |
+
+Every ratio is `null` when n = 0 (never a substituted zero). `minSampleSize` is the server setting `ANALYSIS_MIN_SAMPLE_SIZE` (default 100); `status` is `ok` only when `sufficiency` is `sufficient`. Earlier servers sent `metrics` / `patterns` / `signal` (rolling windows, baseline comparisons); those fields were removed and the schema strips them, so mixed versions keep validating.
+
 ## Admin endpoints (`/v1/admin/*`)
 
 Every call needs `X-Admin-Service-Key: <ADMIN_SERVICE_KEY>`. Without it the response is 403, even with a valid session. Every call except login also needs `Authorization: Bearer <admin session>` (8 h TTL). The admin site sends the end user's IP as `X-Admin-Client-IP`, which the server trusts only after the service key checks out. These endpoints are called only from the admin site's server runtime.
