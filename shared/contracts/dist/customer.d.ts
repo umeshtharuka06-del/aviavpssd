@@ -140,124 +140,29 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
         label: z.ZodString;
         value: z.ZodString;
     }, z.core.$strip>>;
-    metrics: z.ZodOptional<z.ZodObject<{
+    summary: z.ZodOptional<z.ZodObject<{
         scope: z.ZodLiteral<"device">;
-        quality: z.ZodEnum<{
-            ok: "ok";
-            insufficient_data: "insufficient_data";
-            stale: "stale";
+        sampleSize: z.ZodNumber;
+        minSampleSize: z.ZodNumber;
+        sufficiency: z.ZodEnum<{
+            no_data: "no_data";
+            collecting: "collecting";
+            sufficient: "sufficient";
         }>;
-        totalRounds: z.ZodNumber;
+        thresholds: z.ZodArray<z.ZodObject<{
+            threshold: z.ZodNumber;
+            count: z.ZodNumber;
+            frequency: z.ZodNullable<z.ZodNumber>;
+        }, z.core.$strip>>;
+        below2x: z.ZodObject<{
+            threshold: z.ZodNumber;
+            count: z.ZodNumber;
+            frequency: z.ZodNullable<z.ZodNumber>;
+        }, z.core.$strip>;
+        averageMultiplier: z.ZodNullable<z.ZodNumber>;
+        invalidExcluded: z.ZodNumber;
         latestRoundAt: z.ZodNullable<z.ZodISODateTime>;
         freshnessSeconds: z.ZodNullable<z.ZodNumber>;
-        stale: z.ZodBoolean;
-        windows: z.ZodArray<z.ZodObject<{
-            window: z.ZodUnion<readonly [z.ZodLiteral<50>, z.ZodLiteral<100>, z.ZodLiteral<250>, z.ZodLiteral<500>, z.ZodLiteral<"all">]>;
-            requestedSize: z.ZodNullable<z.ZodNumber>;
-            sampleSize: z.ZodNumber;
-            complete: z.ZodBoolean;
-            mean: z.ZodNullable<z.ZodNumber>;
-            median: z.ZodNullable<z.ZodNumber>;
-            min: z.ZodNullable<z.ZodNumber>;
-            max: z.ZodNullable<z.ZodNumber>;
-            thresholds: z.ZodArray<z.ZodObject<{
-                threshold: z.ZodNumber;
-                direction: z.ZodEnum<{
-                    at_least: "at_least";
-                    below: "below";
-                }>;
-                count: z.ZodNumber;
-                total: z.ZodNumber;
-                proportion: z.ZodNumber;
-                ciLow: z.ZodNumber;
-                ciHigh: z.ZodNumber;
-            }, z.core.$strip>>;
-        }, z.core.$strip>>;
-    }, z.core.$strip>>;
-    patterns: z.ZodOptional<z.ZodObject<{
-        recentWindow: z.ZodUnion<readonly [z.ZodLiteral<50>, z.ZodLiteral<100>, z.ZodLiteral<250>, z.ZodLiteral<500>, z.ZodLiteral<"all">]>;
-        baselineWindow: z.ZodUnion<readonly [z.ZodLiteral<50>, z.ZodLiteral<100>, z.ZodLiteral<250>, z.ZodLiteral<500>, z.ZodLiteral<"all">]>;
-        comparisons: z.ZodArray<z.ZodObject<{
-            threshold: z.ZodNumber;
-            direction: z.ZodEnum<{
-                at_least: "at_least";
-                below: "below";
-            }>;
-            recent: z.ZodObject<{
-                window: z.ZodUnion<readonly [z.ZodLiteral<50>, z.ZodLiteral<100>, z.ZodLiteral<250>, z.ZodLiteral<500>, z.ZodLiteral<"all">]>;
-                count: z.ZodNumber;
-                total: z.ZodNumber;
-                proportion: z.ZodNumber;
-                ciLow: z.ZodNumber;
-                ciHigh: z.ZodNumber;
-            }, z.core.$strip>;
-            baseline: z.ZodObject<{
-                window: z.ZodUnion<readonly [z.ZodLiteral<50>, z.ZodLiteral<100>, z.ZodLiteral<250>, z.ZodLiteral<500>, z.ZodLiteral<"all">]>;
-                count: z.ZodNumber;
-                total: z.ZodNumber;
-                proportion: z.ZodNumber;
-                ciLow: z.ZodNumber;
-                ciHigh: z.ZodNumber;
-            }, z.core.$strip>;
-            delta: z.ZodNumber;
-            ciOverlap: z.ZodBoolean;
-        }, z.core.$strip>>;
-        lowStreak: z.ZodObject<{
-            threshold: z.ZodNumber;
-            window: z.ZodUnion<readonly [z.ZodLiteral<50>, z.ZodLiteral<100>, z.ZodLiteral<250>, z.ZodLiteral<500>, z.ZodLiteral<"all">]>;
-            sampleSize: z.ZodNumber;
-            lowCount: z.ZodNumber;
-            longestStreak: z.ZodNumber;
-            currentStreak: z.ZodNumber;
-            distribution: z.ZodArray<z.ZodObject<{
-                length: z.ZodNumber;
-                occurrences: z.ZodNumber;
-            }, z.core.$strip>>;
-        }, z.core.$strip>;
-        highMultipliers: z.ZodObject<{
-            threshold: z.ZodNumber;
-            window: z.ZodUnion<readonly [z.ZodLiteral<50>, z.ZodLiteral<100>, z.ZodLiteral<250>, z.ZodLiteral<500>, z.ZodLiteral<"all">]>;
-            count: z.ZodNumber;
-            total: z.ZodNumber;
-            buckets: z.ZodArray<z.ZodObject<{
-                floor: z.ZodNumber;
-                ceil: z.ZodNullable<z.ZodNumber>;
-                count: z.ZodNumber;
-                proportion: z.ZodNumber;
-            }, z.core.$strip>>;
-        }, z.core.$strip>;
-        warnings: z.ZodArray<z.ZodString>;
-    }, z.core.$strip>>;
-    signal: z.ZodOptional<z.ZodObject<{
-        status: z.ZodEnum<{
-            ok: "ok";
-            insufficient_data: "insufficient_data";
-            stale: "stale";
-        }>;
-        scope: z.ZodObject<{
-            kind: z.ZodLiteral<"device">;
-            siteId: z.ZodString;
-        }, z.core.$strip>;
-        roundsAnalyzed: z.ZodNumber;
-        windowSizes: z.ZodArray<z.ZodUnion<readonly [z.ZodLiteral<50>, z.ZodLiteral<100>, z.ZodLiteral<250>, z.ZodLiteral<500>, z.ZodLiteral<"all">]>>;
-        classifications: z.ZodArray<z.ZodObject<{
-            threshold: z.ZodNumber;
-            direction: z.ZodEnum<{
-                at_least: "at_least";
-                below: "below";
-            }>;
-            classification: z.ZodEnum<{
-                insufficient_data: "insufficient_data";
-                elevated_vs_baseline: "elevated_vs_baseline";
-                near_baseline: "near_baseline";
-                reduced_vs_baseline: "reduced_vs_baseline";
-                stale_or_unreliable: "stale_or_unreliable";
-            }>;
-            delta: z.ZodNumber;
-            ciOverlap: z.ZodBoolean;
-        }, z.core.$strip>>;
-        freshnessSeconds: z.ZodNullable<z.ZodNumber>;
-        limitations: z.ZodArray<z.ZodString>;
         isHistoricalOnly: z.ZodLiteral<true>;
     }, z.core.$strip>>;
     notice: z.ZodString;

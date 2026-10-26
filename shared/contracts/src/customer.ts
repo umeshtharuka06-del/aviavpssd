@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AnalysisMetricsSchema, RecentPatternsSchema, SignalReportSchema } from './analysis.js';
+import { HistoricalSummarySchema } from './analysis.js';
 import {
   ActivationCodeInputSchema,
   DeviceIdSchema,
@@ -114,15 +114,12 @@ export const AnalysisResponseSchema = z.object({
   observationsConsidered: z.number().int().nonnegative(),
   items: z.array(AnalysisItemSchema).max(20),
   /**
-   * Structured empirical metrics (thresholds, rolling windows, Wilson CIs). Optional for
-   * backward compatibility: the mock provider and older clients omit/ignore it; the live
-   * statistical provider populates it and the dashboard renders it.
+   * Device-scoped historical summary (threshold frequencies, below-2× indicator, average).
+   * Optional for backward compatibility: the mock provider omits it. Earlier server versions
+   * sent `metrics` / `patterns` / `signal` instead; those fields were removed and are ignored
+   * (stripped) by this schema, so mixed client/server versions keep validating.
    */
-  metrics: AnalysisMetricsSchema.optional(),
-  /** Recent-pattern comparisons, low streaks and high-multiplier distribution (optional). */
-  patterns: RecentPatternsSchema.optional(),
-  /** Signal-engine report: scope + descriptive per-threshold classification (optional). */
-  signal: SignalReportSchema.optional(),
+  summary: HistoricalSummarySchema.optional(),
   notice: z.string().max(400),
 });
 export type AnalysisResponse = z.infer<typeof AnalysisResponseSchema>;
