@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AnalysisMetricsSchema, RecentPatternsSchema, SignalReportSchema } from './analysis.js';
 import { ActivationCodeInputSchema, DeviceIdSchema, IsoDateTimeSchema, MultiplierSchema, SiteIdSchema, SubscriptionViewSchema, } from './common.js';
 import { MAX_OBSERVATIONS_PER_BATCH } from './limits.js';
 /* ---------- POST /v1/activation/redeem (no auth) ---------- */
@@ -77,5 +78,15 @@ export const AnalysisResponseSchema = z.object({
     windowHours: z.number().int().positive(),
     observationsConsidered: z.number().int().nonnegative(),
     items: z.array(AnalysisItemSchema).max(20),
+    /**
+     * Structured empirical metrics (thresholds, rolling windows, Wilson CIs). Optional for
+     * backward compatibility: the mock provider and older clients omit/ignore it; the live
+     * statistical provider populates it and the dashboard renders it.
+     */
+    metrics: AnalysisMetricsSchema.optional(),
+    /** Recent-pattern comparisons, low streaks and high-multiplier distribution (optional). */
+    patterns: RecentPatternsSchema.optional(),
+    /** Signal-engine report: scope + descriptive per-threshold classification (optional). */
+    signal: SignalReportSchema.optional(),
     notice: z.string().max(400),
 });
