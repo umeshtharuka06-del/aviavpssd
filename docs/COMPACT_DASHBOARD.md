@@ -122,11 +122,8 @@ Not deployed. Every step below needs your approval.
 1. **Backup** (same as before):
    `docker exec aviator-postgres-1 sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --exclude-table-data=game_observations --exclude-table-data=ingest_batches' > aviator-$(date -u +%Y%m%dT%H%M%SZ).dump`
 2. **Backend.** No database migration. Push to `main`, then in Portainer → Stacks → `aviator` →
-   **Pull and redeploy**. `ANALYSIS_PROVIDER` must stay `statistical`.
-   Optional: to change the minimum sample size from 100, add
-   `ANALYSIS_MIN_SAMPLE_SIZE: ${ANALYSIS_MIN_SAMPLE_SIZE:-100}` to `x-backend-env` in
-   `deploy/vps/docker-compose.yml` and set the variable in the stack. That production configuration
-   change was intentionally **not** made.
+   **Pull and redeploy**. The compose file now defaults `ANALYSIS_PROVIDER` to `statistical` and passes
+   `ANALYSIS_MIN_SAMPLE_SIZE` (default 100); an explicit stack value still overrides either.
 3. **Verify:** `POST /v1/analysis` returns `engine.version: "stat-2"` and a `summary` object, with no
    `metrics`, `patterns` or `signal`.
 4. **Extension:** bump `extension/package.json` `version`, then

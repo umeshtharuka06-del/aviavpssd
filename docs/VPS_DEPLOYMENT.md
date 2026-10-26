@@ -12,7 +12,11 @@ There are two ways to run the same `deploy/vps/docker-compose.yml`:
 * **Portainer CE, Git repository stack** → see [Portainer deployment](#portainer-git-repository-stack) below. Secrets live only in Portainer's stack environment variables; no `.env` file exists anywhere.
 * **Plain `docker compose` on the server** → sections 1–4. Secrets live in `deploy/vps/.env` on the server only.
 
-The compose file reads every setting through `${VAR}` interpolation, so both work without code changes. The Caddyfile is built into a small image (`deploy/reverse-proxy/Dockerfile`) rather than bind-mounted, because a Portainer Git stack is cloned inside the Portainer container and relative bind-mount paths do not exist on the host.
+The compose file reads every setting through `${VAR}` interpolation, so both work without code changes.
+
+**Backend image.** `migrate`, `api` and `retention-worker` share one definition (`x-backend`): the same build (context = repository root, `backend/Dockerfile`) and the same tag `aviator-backend:${IMAGE_TAG:-latest}`. The root context is required because the image compiles the `shared/contracts` workspace and copies `database/migrations`. Any of the three can be named in `docker compose build` (e.g. `build api`), and all three always run the same image. Compose may build the identical image once per service; unchanged steps come from the build cache.
+
+The Caddyfile is built into a small image (`deploy/reverse-proxy/Dockerfile`) rather than bind-mounted, because a Portainer Git stack is cloned inside the Portainer container and relative bind-mount paths do not exist on the host.
 
 ## Portainer (Git repository stack)
 
@@ -32,7 +36,9 @@ Stack → **Environment variables**. Names only are shown here; generate each se
 | `DEVICE_PEPPER` | yes | ≥ 32 chars. Losing it forces every customer to re-enter their code. |
 | `IP_HASH_PEPPER` | yes | ≥ 32 chars. |
 | `ADMIN_SERVICE_KEY` | yes | ≥ 32 chars. The same value goes into Vercel as `VPS_ADMIN_SERVICE_KEY`. |
-| `ACCEPTED_SITE_IDS`, `ACCEPTED_SITE_DOMAINS`, `LOG_LEVEL`, `DATABASE_POOL_MAX`, `DEFAULT_DEVICE_LIMIT`, `CUSTOMER_SESSION_TTL_HOURS`, `ADMIN_SESSION_TTL_HOURS`, `ANALYSIS_PROVIDER`, `RETENTION_INTERVAL_SECONDS`, `SECURITY_EVENT_RETENTION_DAYS`, `IMAGE_TAG` | optional | Defaults are in `deploy/vps/.env.example`. |
+| `ANALYSIS_PROVIDER` | recommended | `statistical` (the compose default) for production. `mock` returns labelled test data only. |
+| `ACCEPTED_SITE_IDS` | optional | Never include `devfixture`: the API refuses to start with it in production. |
+| `ACCEPTED_SITE_DOMAINS`, `ANALYSIS_MIN_SAMPLE_SIZE`, `LOG_LEVEL`, `DATABASE_POOL_MAX`, `DEFAULT_DEVICE_LIMIT`, `CUSTOMER_SESSION_TTL_HOURS`, `ADMIN_SESSION_TTL_HOURS`, `RETENTION_INTERVAL_SECONDS`, `SECURITY_EVENT_RETENTION_DAYS`, `IMAGE_TAG` | optional | Defaults are in `deploy/vps/.env.example`. |
 
 Keep an offline copy of these values (password manager). A missing required variable stops the deploy with `required variable X is missing a value: set X` — the message names the variable, never a value.
 
@@ -147,7 +153,7 @@ bash ../scripts/create-admin.sh owner@yourdomain.com
 | Backup (cron) | `15 3 * * * cd /opt/aviator/deploy/vps && bash ../scripts/backup.sh >> /var/log/aviator-backup.log 2>&1` |
 | Copy backups off-site | e.g. `rclone copy /var/backups/aviator remote:aviator-backups --max-age 15d` (encrypt the remote) |
 | Restore | `docker compose stop api retention-worker && bash ../scripts/restore.sh <file> && docker compose up -d` |
-| Update | **back up first** (`bash ../scripts/backup.sh`), copy new code → `docker compose build && docker compose up -d` (the `migrate` container applies pending migrations before the API starts) |
+| Update | **back up first** (`bash ../scripts/backup.sh`), copy new code → `bash ../scripts/validate-env.sh` → `docker compose build api && docker compose up -d` (the `migrate` container applies pending migrations before the API starts; volumes are kept) |
 | Give existing codes 5 devices (optional, explicit) | `docker compose run --rm migrate node dist/src/database/cli.js raise-device-limits --to 5` (dry run), then add `--apply` |
 | Rotate service key | change `ADMIN_SERVICE_KEY` in `.env` and Vercel's `VPS_ADMIN_SERVICE_KEY`, then `docker compose up -d api` and redeploy Vercel |
 

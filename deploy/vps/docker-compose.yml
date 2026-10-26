@@ -25,12 +25,21 @@ x-backend-env: &backend-env
   ADMIN_SESSION_TTL_HOURS: ${ADMIN_SESSION_TTL_HOURS:-8}
   ACCEPTED_SITE_IDS: ${ACCEPTED_SITE_IDS:-onexbet,melbet,starz888}
   ACCEPTED_SITE_DOMAINS: ${ACCEPTED_SITE_DOMAINS:-}
-  ANALYSIS_PROVIDER: ${ANALYSIS_PROVIDER:-mock}
+  # Production serves real descriptive statistics; "mock" (labelled test data) only if set explicitly.
+  ANALYSIS_PROVIDER: ${ANALYSIS_PROVIDER:-statistical}
+  ANALYSIS_MIN_SAMPLE_SIZE: ${ANALYSIS_MIN_SAMPLE_SIZE:-100}
   RETENTION_INTERVAL_SECONDS: ${RETENTION_INTERVAL_SECONDS:-300}
   SECURITY_EVENT_RETENTION_DAYS: ${SECURITY_EVENT_RETENTION_DAYS:-90}
 
+# Shared by migrate, api and retention-worker. Each of them declares the SAME build (repository
+# root as context, so the image can include shared/contracts and database/migrations) and the SAME
+# image tag, so `docker compose build api` (or migrate / retention-worker) works and all three always
+# run identical code. pull_policy: build rebuilds from the checked-out code on every `up`
+# (Portainer redeploys may not pass --build); unchanged layers come from the build cache.
 x-backend: &backend
   image: aviator-backend:${IMAGE_TAG:-latest}
+  build: { context: ../.., dockerfile: backend/Dockerfile }
+  pull_policy: build
   restart: unless-stopped
   read_only: true
   tmpfs: [/tmp]
@@ -63,9 +72,6 @@ services:
 
   migrate:
     <<: *backend
-    build: { context: ../.., dockerfile: backend/Dockerfile }
-    # Rebuild from the checked-out code on every deploy (Portainer redeploys may not pass --build).
-    pull_policy: build
     command: ['node', 'dist/src/database/cli.js', 'migrate']
     restart: 'no'
     environment: *backend-env
