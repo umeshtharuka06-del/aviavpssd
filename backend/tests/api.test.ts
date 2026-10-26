@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { AnalysisResponseSchema, ErrorBodySchema } from '@aviator/contracts';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/api/app.js';
-import { loadEnv } from '../src/config/env.js';
+import { isSiteAccepted, loadEnv } from '../src/config/env.js';
 import { createPool } from '../src/database/pool.js';
 import { MockAnalysisProvider } from '../src/engine/mock-provider.js';
 import { adminHeaders, bearer, createAdmin, createHarness, generate, redeem, resetDb, TEST_SECRETS, testEnv, type Harness } from './helpers.js';
@@ -111,6 +111,28 @@ describe('configuration', () => {
 
   it('rejects the dev fixture site in production', () => {
     expect(() => loadEnv({ ...base, NODE_ENV: 'production', ACCEPTED_SITE_IDS: 'onexbet,devfixture' })).toThrow(/devfixture/);
+  });
+
+  it('rejects devfixture in production even with spaces, and accepts legitimate production sites', () => {
+    expect(() => loadEnv({ ...base, NODE_ENV: 'production', ACCEPTED_SITE_IDS: 'onexbet, devfixture' })).toThrow(/devfixture/);
+    const env = loadEnv({
+      ...base,
+      NODE_ENV: 'production',
+      ACCEPTED_SITE_IDS: 'onexbet,melbet,starz888',
+      ACCEPTED_SITE_DOMAINS: '1xlite-2781.pro',
+      ANALYSIS_PROVIDER: 'statistical',
+      ANALYSIS_MIN_SAMPLE_SIZE: '100',
+    });
+    expect(env.ANALYSIS_PROVIDER).toBe('statistical');
+    expect(env.ANALYSIS_MIN_SAMPLE_SIZE).toBe(100);
+    expect(isSiteAccepted(env, '1xlite-2781-pro')).toBe(true);
+    expect(isSiteAccepted(env, 'onexbet')).toBe(true);
+    expect(isSiteAccepted(env, 'devfixture')).toBe(false);
+  });
+
+  it('ANALYSIS_MIN_SAMPLE_SIZE is bounded (10–5000)', () => {
+    expect(() => loadEnv({ ...base, ANALYSIS_MIN_SAMPLE_SIZE: '5' })).toThrow(/ANALYSIS_MIN_SAMPLE_SIZE/);
+    expect(() => loadEnv({ ...base, ANALYSIS_MIN_SAMPLE_SIZE: '9999' })).toThrow(/ANALYSIS_MIN_SAMPLE_SIZE/);
   });
 
   it('accepts devfixture in development mode', () => {
@@ -253,5 +275,36 @@ describe('deployment templates must not contain devfixture', () => {
     const value = extractAcceptedSiteIds(content);
     expect(value).toBeDefined();
     expect(value).not.toContain('devfixture');
+  });
+});
+
+describe('deploy/vps/docker-compose.yml backend image', () => {
+  const compose = readFileSync(resolve(import.meta.dirname, '../../deploy/vps/docker-compose.yml'), 'utf8').replace(/\r\n/g, '\n');
+  /** Body of a top-level `x-…` block or a service (two-space indented key), up to the next sibling key. */
+  const block = (header: string) => {
+    const start = compose.indexOf(`\n${header}\n`);
+    expect(start, header).toBeGreaterThanOrEqual(0);
+    const indent = header.match(/^ */)![0].length;
+    const lines = compose.slice(start + header.length + 2).split('\n');
+    const end = lines.findIndex((l) => l.trim() !== '' && !l.trim().startsWith('#') && l.match(/^ */)![0].length <= indent);
+    return lines.slice(0, end).join('\n');
+  };
+
+  it('the shared backend definition builds from the repository root with backend/Dockerfile', () => {
+    const backend = block('x-backend: &backend');
+    expect(backend).toMatch(/^\s+image: aviator-backend:\$\{IMAGE_TAG:-latest\}$/m);
+    expect(backend).toMatch(/^\s+build: \{ context: \.\.\/\.\., dockerfile: backend\/Dockerfile \}$/m);
+    expect(backend).toMatch(/^\s+pull_policy: build$/m);
+  });
+
+  it.each(['migrate', 'api', 'retention-worker'])('%s uses that same build and image (no overrides), so `compose build <service>` works', (service) => {
+    const body = block(`  ${service}:`);
+    expect(body).toMatch(/^\s+<<: \*backend$/m);
+    expect(body).not.toMatch(/^\s+(build|image|pull_policy):/m);
+  });
+
+  it('production defaults to the statistical provider', () => {
+    expect(compose).toContain('ANALYSIS_PROVIDER: ${ANALYSIS_PROVIDER:-statistical}');
+    expect(compose).not.toMatch(/ANALYSIS_PROVIDER:-mock/);
   });
 });
