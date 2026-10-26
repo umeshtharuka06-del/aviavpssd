@@ -2,7 +2,6 @@ import { HISTORY_RETENTION_HOURS, type AnalysisResponse } from '@aviator/contrac
 import { AppError } from '../api/errors.js';
 import { isSiteAccepted } from '../config/env.js';
 import type { AppContext } from '../context.js';
-import { buildSignalReport } from './signal-engine.js';
 
 const MAX_OBSERVATIONS_FOR_ANALYSIS = 5_000;
 const PROVIDER_TIMEOUT_MS = 5_000;
@@ -41,9 +40,6 @@ export async function runAnalysis(ctx: AppContext, siteId: string, deviceActivat
   } catch {
     throw new AppError('ANALYSIS_UNAVAILABLE', 'Analysis is temporarily unavailable.');
   }
-  // The signal engine composes metrics + patterns into a descriptive, device-scoped report.
-  const signal = output.metrics && output.patterns ? buildSignalReport(output.metrics, output.patterns, siteId) : undefined;
-
   return {
     engine: { kind: provider.kind, version: provider.version },
     isTestData: provider.isTestData,
@@ -53,9 +49,7 @@ export async function runAnalysis(ctx: AppContext, siteId: string, deviceActivat
     windowHours: HISTORY_RETENTION_HOURS,
     observationsConsidered: rows.length,
     items: output.items.slice(0, 20),
-    ...(output.metrics ? { metrics: output.metrics } : {}),
-    ...(output.patterns ? { patterns: output.patterns } : {}),
-    ...(signal ? { signal } : {}),
+    ...(output.summary ? { summary: output.summary } : {}),
     notice: output.notice,
   };
 }

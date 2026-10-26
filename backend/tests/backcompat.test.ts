@@ -5,9 +5,9 @@ import { MockAnalysisProvider } from '../src/engine/mock-provider.js';
 import { adminHeaders, bearer, createAdmin, createHarness, generate, redeem, resetDb, type Harness } from './helpers.js';
 
 /**
- * Schema validation + backward compatibility (Phase 9 item 12). The structured fields
- * (metrics/patterns/signal) are optional: a provider that omits them (the mock) still produces a
- * response that validates, and an older response shape with none of them is still valid. Old
+ * Schema validation + backward compatibility (Phase 9 item 12). The structured `summary`
+ * field is optional: a provider that omits it (the mock) still produces a
+ * response that validates, and older response shapes are still valid. Old
  * extension builds that ignore the new fields keep working.
  */
 let h: Harness;
@@ -37,9 +37,8 @@ describe('analysis response backward compatibility', () => {
     expect(body.isTestData).toBe(true);
     expect(body.items.length).toBeGreaterThan(0);
     // Optional structured fields are simply absent — not null, not empty objects.
-    expect(body.metrics).toBeUndefined();
-    expect(body.patterns).toBeUndefined();
-    expect(body.signal).toBeUndefined();
+    expect(body.summary).toBeUndefined();
+    expect(res.json()).not.toHaveProperty('summary');
   });
 
   it('an old-shaped response (no metrics/patterns/signal) still validates', () => {
@@ -55,5 +54,27 @@ describe('analysis response backward compatibility', () => {
       notice: 'Historical frequencies. Past results do not predict future outcomes.',
     };
     expect(() => AnalysisResponseSchema.parse(legacy)).not.toThrow();
+  });
+
+  it('a response from an older server (with metrics/patterns/signal) still validates; the old fields are stripped', () => {
+    const older = {
+      engine: { kind: 'live', version: 'stat-1' },
+      isTestData: false,
+      status: 'ok',
+      siteId: 'devfixture',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      windowHours: 12,
+      observationsConsidered: 10,
+      items: [{ label: 'Rounds in window', value: '10' }],
+      metrics: { scope: 'device', windows: [] },
+      patterns: { comparisons: [] },
+      signal: { classifications: [] },
+      notice: 'Past results do not predict future outcomes.',
+    };
+    const parsed = AnalysisResponseSchema.parse(older) as Record<string, unknown>;
+    expect(parsed.metrics).toBeUndefined();
+    expect(parsed.patterns).toBeUndefined();
+    expect(parsed.signal).toBeUndefined();
+    expect(parsed.summary).toBeUndefined();
   });
 });

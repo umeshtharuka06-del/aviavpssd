@@ -6,7 +6,7 @@ import { StatisticalAnalysisProvider } from './engine/statistical-provider.js';
 const env = loadEnv();
 const pool = createPool(env.DATABASE_URL, env.DATABASE_POOL_MAX);
 const analysisProvider = env.ANALYSIS_PROVIDER === 'statistical'
-    ? new StatisticalAnalysisProvider()
+    ? new StatisticalAnalysisProvider({ minSampleSize: env.ANALYSIS_MIN_SAMPLE_SIZE })
     : new MockAnalysisProvider();
 const app = await buildApp({ env, pool, now: () => new Date(), analysisProvider });
 const shutdown = async () => {

@@ -12,7 +12,7 @@ import { adminHeaders, bearer, createAdmin, createHarness, generate, newDeviceId
 let h: Harness;
 
 beforeAll(async () => {
-  h = await createHarness({ provider: new StatisticalAnalysisProvider() });
+  h = await createHarness({ provider: new StatisticalAnalysisProvider({ minSampleSize: 10 }) });
 });
 afterAll(async () => h.close());
 beforeEach(async () => {

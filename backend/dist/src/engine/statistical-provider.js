@@ -1,128 +1,46 @@
-import { computeMetrics, MIN_ROUNDS_FOR_OK } from './metrics.js';
-import { computePatterns } from './trends.js';
-const MIN_OBSERVATIONS = MIN_ROUNDS_FOR_OK;
-const NOTICE = 'Descriptive statistics of observed multipliers within the retention window. ' +
-    'Past results do not predict future outcomes. This is not a signal, prediction, or strategy recommendation.';
-const INSUFFICIENT_NOTICE = 'Not enough data yet — at least 10 rounds are needed for meaningful statistics. ' +
+import { DEFAULT_MIN_SAMPLE_SIZE } from '@aviator/contracts';
+import { computeHistoricalSummary } from './summary.js';
+const NOTICE = 'Historical frequencies of this device\'s observed rounds within the retention window. ' +
+    'Past results do not predict future outcomes. This is not a signal, prediction, or betting recommendation.';
+const COLLECTING_NOTICE = 'Collecting data — too few rounds observed yet for the figures to be well supported. ' +
     'Past results do not predict future outcomes.';
 export class StatisticalAnalysisProvider {
     kind = 'live';
-    version = 'stat-1';
+    version = 'stat-2';
     isTestData = false;
+    minSampleSize;
+    constructor(opts = {}) {
+        this.minSampleSize = opts.minSampleSize ?? DEFAULT_MIN_SAMPLE_SIZE;
+    }
     async analyze(input) {
-        const multipliers = input.observations
-            .map((o) => o.multiplier)
-            .filter((m) => Number.isFinite(m) && m >= 1);
-        const n = multipliers.length;
-        // Structured metrics and recent-pattern analysis are computed for every call (even
-        // insufficient/empty) so the dashboard can show the real sample size and windows alongside a
-        // clear status.
-        const metrics = computeMetrics(input.observations, input.now);
-        const patterns = computePatterns(input.observations);
-        if (n < MIN_OBSERVATIONS) {
-            return {
-                status: 'insufficient_data',
-                items: [{ label: 'Observations in window', value: String(n) }],
-                metrics,
-                patterns,
-                notice: INSUFFICIENT_NOTICE,
-            };
-        }
-        const sorted = multipliers.slice().sort((a, b) => a - b);
-        const sum = multipliers.reduce((acc, v) => acc + v, 0);
-        const mean = sum / n;
-        const median = n % 2 === 1
-            ? sorted[Math.floor(n / 2)]
-            : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
-        const variance = multipliers.reduce((acc, v) => acc + (v - mean) ** 2, 0) / n;
-        const stdDev = Math.sqrt(variance);
-        const q25 = percentile(sorted, 0.25);
-        const q75 = percentile(sorted, 0.75);
-        let under2 = 0;
-        let under5 = 0;
-        let under10 = 0;
-        for (const m of multipliers) {
-            if (m < 2)
-                under2++;
-            if (m < 5)
-                under5++;
-            if (m < 10)
-                under10++;
-        }
-        const modeBinFloor = modeBucket(multipliers);
-        const modeLabel = modeBinFloor >= 50
-            ? '50.00×+'
-            : `${modeBinFloor}.00× – ${modeBinFloor}.99×`;
-        const timestamps = input.observations.map((o) => o.receivedAt.getTime());
-        const oldest = Math.min(...timestamps);
-        const newest = Math.max(...timestamps);
-        const spanMs = newest - oldest;
+        const summary = computeHistoricalSummary(input.observations, input.now, { minSampleSize: this.minSampleSize });
+        const sufficient = summary.sufficiency === 'sufficient';
         return {
-            status: 'ok',
-            items: [
-                { label: 'Rounds in window', value: fmtCount(n) },
-                { label: 'Time span', value: fmtTimeSpan(spanMs) },
-                { label: 'Mean multiplier', value: fmtMult(mean) },
-                { label: 'Median multiplier', value: fmtMult(median) },
-                { label: 'Std deviation', value: fmtMult(stdDev) },
-                { label: '25th percentile', value: fmtMult(q25) },
-                { label: '75th percentile', value: fmtMult(q75) },
-                { label: 'Minimum', value: fmtMult(sorted[0]) },
-                { label: 'Maximum', value: fmtMult(sorted[n - 1]) },
-                { label: 'Rounds < 2×', value: fmtPct(under2, n) },
-                { label: 'Rounds < 5×', value: fmtPct(under5, n) },
-                { label: 'Rounds < 10×', value: fmtPct(under10, n) },
-                { label: 'Rounds ≥ 10×', value: fmtPct(n - under10, n) },
-                { label: 'Most common range', value: modeLabel },
-            ],
-            metrics,
-            patterns,
-            notice: NOTICE,
+            status: sufficient ? 'ok' : 'insufficient_data',
+            items: items(summary),
+            summary,
+            notice: sufficient ? NOTICE : COLLECTING_NOTICE,
         };
     }
 }
-function percentile(sorted, p) {
-    const idx = p * (sorted.length - 1);
-    const lo = Math.floor(idx);
-    const hi = Math.ceil(idx);
-    if (lo === hi)
-        return sorted[lo];
-    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
-}
-function modeBucket(multipliers) {
-    const bins = new Map();
-    for (const m of multipliers) {
-        const bin = Math.min(Math.floor(m), 50);
-        bins.set(bin, (bins.get(bin) ?? 0) + 1);
+/**
+ * Flat label/value list for older extension builds that do not read `summary`. Kept short and
+ * mirrors the summary exactly; no figure is shown without its sample size.
+ */
+function items(s) {
+    const n = s.sampleSize;
+    const list = [{ label: 'Valid rounds observed', value: n.toLocaleString('en-US') }];
+    if (s.sufficiency !== 'sufficient') {
+        list.push({ label: 'Status', value: `Collecting data (${n} of ${s.minSampleSize} rounds)` });
+        return list;
     }
-    let best = 1;
-    let bestCount = 0;
-    for (const [bin, count] of bins) {
-        if (count > bestCount || (count === bestCount && bin < best)) {
-            best = bin;
-            bestCount = count;
-        }
-    }
-    return best;
+    for (const t of s.thresholds)
+        list.push({ label: `Historical frequency ≥ ${t.threshold}×`, value: fmtFreq(t.count, n) });
+    list.push({ label: 'Historical rounds below 2×', value: fmtFreq(s.below2x.count, n) });
+    if (s.averageMultiplier != null)
+        list.push({ label: 'Historical average multiplier', value: `${s.averageMultiplier.toFixed(2)}×` });
+    return list;
 }
-function fmtMult(v) {
-    if (v >= 10_000)
-        return `${Math.round(v).toLocaleString('en-US')}×`;
-    return `${v.toFixed(2)}×`;
-}
-function fmtCount(n) {
-    return n.toLocaleString('en-US');
-}
-function fmtPct(count, total) {
-    const pct = ((count / total) * 100).toFixed(1);
-    return `${pct}% (${fmtCount(count)})`;
-}
-function fmtTimeSpan(ms) {
-    if (ms < 60_000)
-        return '< 1 min';
-    const hours = Math.floor(ms / 3_600_000);
-    const minutes = Math.floor((ms % 3_600_000) / 60_000);
-    if (hours === 0)
-        return `${minutes} min`;
-    return `${hours} h ${minutes} min`;
+function fmtFreq(count, n) {
+    return `${((count / n) * 100).toFixed(1)}% (${count.toLocaleString('en-US')} of ${n.toLocaleString('en-US')})`;
 }

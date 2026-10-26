@@ -1,4 +1,4 @@
-import { DEFAULT_DEVICE_LIMIT, MAX_DEVICE_LIMIT, SiteIdSchema, siteKeyForConfiguredDomain } from '@aviator/contracts';
+import { DEFAULT_DEVICE_LIMIT, DEFAULT_MIN_SAMPLE_SIZE, MAX_DEVICE_LIMIT, SiteIdSchema, siteKeyForConfiguredDomain } from '@aviator/contracts';
 import { z } from 'zod';
 
 /**
@@ -57,6 +57,11 @@ const EnvSchema = z
 
     /** Which analysis provider to use: "mock" (test data) or "statistical" (real descriptive stats). */
     ANALYSIS_PROVIDER: z.enum(['mock', 'statistical']).default('mock'),
+    /**
+     * Valid rounds a device needs on a site before its historical frequencies are reported as
+     * sufficiently supported (below it the extension shows "Collecting data").
+     */
+    ANALYSIS_MIN_SAMPLE_SIZE: z.coerce.number().int().min(10).max(5000).default(DEFAULT_MIN_SAMPLE_SIZE),
 
     RETENTION_INTERVAL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
     SECURITY_EVENT_RETENTION_DAYS: z.coerce.number().int().min(7).max(365).default(90),

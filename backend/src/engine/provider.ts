@@ -18,10 +18,8 @@ export interface AnalysisInput {
 export interface AnalysisOutput {
   status: 'ok' | 'insufficient_data';
   items: Array<{ label: string; value: string }>;
-  /** Structured empirical metrics. Optional: the mock provider omits it. */
-  metrics?: import('@aviator/contracts').AnalysisMetrics;
-  /** Recent-pattern analysis (trends, streaks, distribution). Optional. */
-  patterns?: import('@aviator/contracts').RecentPatterns;
+  /** Device-scoped historical summary. Optional: the mock provider omits it. */
+  summary?: import('@aviator/contracts').HistoricalSummary;
   notice: string;
 }
 
