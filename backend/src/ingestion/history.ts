@@ -10,7 +10,8 @@ import { withTransaction } from '../database/pool.js';
  *
  *  - received_at is set by the database (DEFAULT now()); nothing from the client affects it.
  *  - batchId makes retries idempotent: a repeated (device, batchId) stores nothing again.
- *  - Rows with a roundRef are de-duplicated per site across devices.
+ *  - Rows with a roundRef are de-duplicated PER DEVICE (so each device keeps its own isolated
+ *    history; a single device still cannot store the same round twice on retries/overlap).
  *  - Raw observations are never written to logs or to any permanent table.
  */
 export async function ingestHistory(ctx: AppContext, auth: CustomerAuth, input: HistoryIngestRequest): Promise<HistoryIngestResponse> {
@@ -36,7 +37,7 @@ export async function ingestHistory(ctx: AppContext, auth: CustomerAuth, input: 
        SELECT $1, m, r, $4
          FROM unnest($2::numeric[], $3::text[]) WITH ORDINALITY AS t(m, r, ord)
         ORDER BY ord
-       ON CONFLICT (site_id, round_ref) WHERE round_ref IS NOT NULL DO NOTHING`,
+       ON CONFLICT (device_activation_id, site_id, round_ref) WHERE round_ref IS NOT NULL DO NOTHING`,
       [
         input.siteId,
         input.observations.map((o) => o.multiplier.toFixed(2)),

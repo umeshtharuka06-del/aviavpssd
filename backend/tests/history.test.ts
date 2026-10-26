@@ -92,11 +92,15 @@ describe('history ingestion', () => {
     expect((await h.pool.query('SELECT count(*)::int AS n FROM game_observations')).rows[0].n).toBe(2);
   });
 
-  it('de-duplicates the same round reported by two devices', async () => {
-    const [c] = await generate(h, await adminHeaders(h), { plan: '30d' });
-    const other = (await redeem(h, c!.code)).body.session.token;
+  it('de-duplicates a repeated roundRef within a device but keeps each device isolated', async () => {
+    const other = (await redeem(h, (await generate(h, await adminHeaders(h), { plan: '30d' }))[0]!.code)).body.session.token;
+    // Same round reported twice by ONE device is stored once (retry/overlap de-dup).
     expect((await post(batch([{ multiplier: 3.3, roundRef: 'round-77' }]))).json().accepted).toBe(1);
-    expect((await post(batch([{ multiplier: 3.3, roundRef: 'round-77' }]), bearer(other))).json()).toMatchObject({ accepted: 0, duplicates: 1 });
+    expect((await post(batch([{ multiplier: 3.3, roundRef: 'round-77' }]))).json()).toMatchObject({ accepted: 0, duplicates: 1 });
+    // A DIFFERENT device reporting the same round keeps its own copy — histories are not merged.
+    expect((await post(batch([{ multiplier: 3.3, roundRef: 'round-77' }]), bearer(other))).json()).toMatchObject({ accepted: 1, duplicates: 0 });
+    const rows = await h.pool.query("SELECT count(*)::int AS n FROM game_observations WHERE round_ref = 'round-77'");
+    expect(rows.rows[0].n).toBe(2);
   });
 
   it('requires a valid session and an active subscription', async () => {

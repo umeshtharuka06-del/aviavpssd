@@ -1,6 +1,8 @@
+import { computeMetrics, MIN_ROUNDS_FOR_OK } from './metrics.js';
+import { computePatterns } from './trends.js';
 import type { AnalysisInput, AnalysisOutput, AnalysisProvider } from './provider.js';
 
-const MIN_OBSERVATIONS = 10;
+const MIN_OBSERVATIONS = MIN_ROUNDS_FOR_OK;
 
 const NOTICE =
   'Descriptive statistics of observed multipliers within the retention window. ' +
@@ -22,10 +24,18 @@ export class StatisticalAnalysisProvider implements AnalysisProvider {
 
     const n = multipliers.length;
 
+    // Structured metrics and recent-pattern analysis are computed for every call (even
+    // insufficient/empty) so the dashboard can show the real sample size and windows alongside a
+    // clear status.
+    const metrics = computeMetrics(input.observations, input.now);
+    const patterns = computePatterns(input.observations);
+
     if (n < MIN_OBSERVATIONS) {
       return {
         status: 'insufficient_data',
         items: [{ label: 'Observations in window', value: String(n) }],
+        metrics,
+        patterns,
         notice: INSUFFICIENT_NOTICE,
       };
     }
@@ -84,6 +94,8 @@ export class StatisticalAnalysisProvider implements AnalysisProvider {
         { label: 'Rounds ≥ 10×', value: fmtPct(n - under10, n) },
         { label: 'Most common range', value: modeLabel },
       ],
+      metrics,
+      patterns,
       notice: NOTICE,
     };
   }

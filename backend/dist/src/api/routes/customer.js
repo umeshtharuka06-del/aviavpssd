@@ -56,8 +56,9 @@ export const customerRoutes = (ctx) => async (app) => {
         return ingestHistory(ctx, auth, body);
     });
     app.post('/analysis', { config: { rateLimit: { max: 30, timeWindow: '1 minute', keyGenerator: sessionKey } } }, async (req) => {
-        await authenticateCustomer(ctx, req.headers.authorization);
+        const auth = await authenticateCustomer(ctx, req.headers.authorization);
         const body = parseOrThrow(AnalysisRequestSchema, req.body);
-        return runAnalysis(ctx, body.siteId);
+        // Analysis is scoped to the authenticated device, never to a client-supplied id.
+        return runAnalysis(ctx, body.siteId, auth.deviceActivationId);
     });
 };

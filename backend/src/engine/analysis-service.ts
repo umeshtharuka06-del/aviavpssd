@@ -2,25 +2,29 @@ import { HISTORY_RETENTION_HOURS, type AnalysisResponse } from '@aviator/contrac
 import { AppError } from '../api/errors.js';
 import { isSiteAccepted } from '../config/env.js';
 import type { AppContext } from '../context.js';
+import { buildSignalReport } from './signal-engine.js';
 
 const MAX_OBSERVATIONS_FOR_ANALYSIS = 5_000;
 const PROVIDER_TIMEOUT_MS = 5_000;
 
 /**
- * Runs the configured provider over the site's unexpired history. The time filter means a
- * lagging retention worker can never cause expired rows to be analyzed. Analysis never
- * modifies or deletes observations, so its success or failure has no effect on retention.
+ * Runs the configured provider over THIS DEVICE's unexpired history for the site. Each device's
+ * analysis is independent: observations are filtered by the device_activation_id of the
+ * authenticated session (never a client-supplied id), so one device cannot read another device's
+ * history. The time filter means a lagging retention worker can never cause expired rows to be
+ * analyzed. Analysis never modifies or deletes observations, so its success or failure has no
+ * effect on retention.
  */
-export async function runAnalysis(ctx: AppContext, siteId: string): Promise<AnalysisResponse> {
+export async function runAnalysis(ctx: AppContext, siteId: string, deviceActivationId: number): Promise<AnalysisResponse> {
   if (!isSiteAccepted(ctx.env, siteId)) {
     throw new AppError('VALIDATION_FAILED', 'This site is not supported.', { issues: [{ path: 'siteId', message: 'unsupported site' }] });
   }
   const now = ctx.now();
   const { rows } = await ctx.pool.query<{ multiplier: string; received_at: Date }>(
     `SELECT multiplier, received_at FROM game_observations
-      WHERE site_id = $1 AND received_at >= now() - make_interval(hours => $2)
-      ORDER BY received_at DESC, id DESC LIMIT $3`,
-    [siteId, HISTORY_RETENTION_HOURS, MAX_OBSERVATIONS_FOR_ANALYSIS],
+      WHERE device_activation_id = $1 AND site_id = $2 AND received_at >= now() - make_interval(hours => $3)
+      ORDER BY received_at DESC, id DESC LIMIT $4`,
+    [deviceActivationId, siteId, HISTORY_RETENTION_HOURS, MAX_OBSERVATIONS_FOR_ANALYSIS],
   );
   const provider = ctx.analysisProvider;
   let output;
@@ -37,6 +41,9 @@ export async function runAnalysis(ctx: AppContext, siteId: string): Promise<Anal
   } catch {
     throw new AppError('ANALYSIS_UNAVAILABLE', 'Analysis is temporarily unavailable.');
   }
+  // The signal engine composes metrics + patterns into a descriptive, device-scoped report.
+  const signal = output.metrics && output.patterns ? buildSignalReport(output.metrics, output.patterns, siteId) : undefined;
+
   return {
     engine: { kind: provider.kind, version: provider.version },
     isTestData: provider.isTestData,
@@ -46,6 +53,9 @@ export async function runAnalysis(ctx: AppContext, siteId: string): Promise<Anal
     windowHours: HISTORY_RETENTION_HOURS,
     observationsConsidered: rows.length,
     items: output.items.slice(0, 20),
+    ...(output.metrics ? { metrics: output.metrics } : {}),
+    ...(output.patterns ? { patterns: output.patterns } : {}),
+    ...(signal ? { signal } : {}),
     notice: output.notice,
   };
 }

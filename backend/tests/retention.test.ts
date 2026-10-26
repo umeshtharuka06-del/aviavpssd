@@ -31,11 +31,11 @@ beforeEach(async () => {
  * Inserts observations with a received_at relative to the DATABASE clock. Only tests may set
  * received_at directly; the API never accepts it.
  */
-async function insertAged(ageSql: string, count = 1, site = 'devfixture') {
+async function insertAged(ageSql: string, count = 1, site = 'devfixture', deviceActivationId: number | null = null) {
   await h.pool.query(
-    `INSERT INTO game_observations (site_id, multiplier, received_at)
-     SELECT $1, 2.00, now() - $2::interval FROM generate_series(1, $3)`,
-    [site, ageSql, count],
+    `INSERT INTO game_observations (site_id, multiplier, received_at, device_activation_id)
+     SELECT $1, 2.00, now() - $2::interval, $4 FROM generate_series(1, $3)`,
+    [site, ageSql, count, deviceActivationId],
   );
 }
 const count = async () => (await h.pool.query('SELECT count(*)::int AS n FROM game_observations')).rows[0].n as number;
@@ -114,8 +114,10 @@ describe('12-hour history retention', () => {
       await createAdmin(h2.pool);
       const [c] = await generate(h2, await adminHeaders(h2), { plan: '30d' });
       const token = (await redeem(h2, c!.code)).body.session.token;
-      await insertAged('13 hours', 6);
-      await insertAged('2 hours', 3);
+      // Analysis is device-scoped, so the aged rows must belong to this authenticated device.
+      const deviceId = (await h2.pool.query('SELECT id FROM device_activations ORDER BY id DESC LIMIT 1')).rows[0].id as number;
+      await insertAged('13 hours', 6, 'devfixture', deviceId);
+      await insertAged('2 hours', 3, 'devfixture', deviceId);
       const res = await h2.app.inject({ method: 'POST', url: '/v1/analysis', headers: bearer(token), payload: { siteId: 'devfixture' } });
       expect(res.json().observationsConsidered).toBe(3);
     } finally {
