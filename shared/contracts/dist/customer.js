@@ -86,7 +86,7 @@ export const AnalysisResponseSchema = z.object({
      */
     summary: HistoricalSummarySchema.optional(),
     /**
-     * Walk-forward next-round forecast experiment (engine stat-3 and later). Optional: older servers
+     * Walk-forward next-round forecast experiment (engine stat-4 and later). Optional: older servers
      * and the mock provider omit it, and older extensions strip it.
      */
     forecast: ForecastSchema.optional(),

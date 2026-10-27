@@ -84,8 +84,10 @@ export type HistoricalSummary = z.infer<typeof HistoricalSummarySchema>;
  *
  * A candidate is "validated" only if, on the test rounds, its log loss is lower than the base
  * rate's by a Diebold–Mariano test (Newey–West variance) at one-sided p < 0.05 ÷ (number of
- * candidate × threshold comparisons), AND its forecasts pass a calibration check (Spiegelhalter
- * |Z| < 1.96). Otherwise the next-round estimate is the base rate, and only if the base rate itself
+ * candidate × threshold comparisons) = `alpha`, AND its forecasts pass a calibration check
+ * (Spiegelhalter |Z| < 1.96), AND the test rounds hold at least `minEvents` events and non-events,
+ * AND — for histories under 1,000 rounds — an exact permutation test gives p < `alpha` too.
+ * Otherwise the next-round estimate is the base rate, and only if the base rate itself
  * passes its calibration check (parametric bootstrap, see ModelScore.calibrationP). Probabilities are estimates with a 95% interval, never guarantees.
  */
 export declare const FORECAST_MODELS: readonly ["base_rate", "rtp_reference", "rolling_50", "after_previous", "since_last_hit", "logistic_recent"];
@@ -117,6 +119,7 @@ export declare const ModelScoreSchema: z.ZodObject<{
     calibrated: z.ZodBoolean;
     skillVsBaseRate: z.ZodNullable<z.ZodNumber>;
     pValue: z.ZodNullable<z.ZodNumber>;
+    permutationP: z.ZodNullable<z.ZodNumber>;
     validated: z.ZodBoolean;
 }, z.core.$strip>;
 export type ModelScore = z.infer<typeof ModelScoreSchema>;
@@ -127,7 +130,9 @@ export declare const ThresholdForecastSchema: z.ZodObject<{
         no_predictive_value: "no_predictive_value";
         not_calibrated: "not_calibrated";
         validated_model_not_current: "validated_model_not_current";
+        insufficient_events: "insufficient_events";
     }>;
+    testEvents: z.ZodNumber;
     selectedModel: z.ZodNullable<z.ZodEnum<{
         base_rate: "base_rate";
         rtp_reference: "rtp_reference";
@@ -158,12 +163,13 @@ export declare const ThresholdForecastSchema: z.ZodObject<{
         calibrated: z.ZodBoolean;
         skillVsBaseRate: z.ZodNullable<z.ZodNumber>;
         pValue: z.ZodNullable<z.ZodNumber>;
+        permutationP: z.ZodNullable<z.ZodNumber>;
         validated: z.ZodBoolean;
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export type ThresholdForecast = z.infer<typeof ThresholdForecastSchema>;
 export declare const ForecastSchema: z.ZodObject<{
-    method: z.ZodLiteral<"walk_forward_v1">;
+    method: z.ZodLiteral<"walk_forward_v2">;
     status: z.ZodEnum<{
         insufficient_data: "insufficient_data";
         evaluated: "evaluated";
@@ -171,11 +177,15 @@ export declare const ForecastSchema: z.ZodObject<{
     sampleSize: z.ZodNumber;
     minSampleSize: z.ZodNumber;
     trainInitial: z.ZodNumber;
+    minTestRounds: z.ZodNumber;
     testRounds: z.ZodNumber;
     refitEvery: z.ZodNumber;
     segments: z.ZodNumber;
     gapSeconds: z.ZodNumber;
     comparisons: z.ZodNumber;
+    alpha: z.ZodNumber;
+    minEvents: z.ZodNumber;
+    permutationMaxRounds: z.ZodNumber;
     thresholds: z.ZodArray<z.ZodObject<{
         threshold: z.ZodNumber;
         status: z.ZodEnum<{
@@ -183,7 +193,9 @@ export declare const ForecastSchema: z.ZodObject<{
             no_predictive_value: "no_predictive_value";
             not_calibrated: "not_calibrated";
             validated_model_not_current: "validated_model_not_current";
+            insufficient_events: "insufficient_events";
         }>;
+        testEvents: z.ZodNumber;
         selectedModel: z.ZodNullable<z.ZodEnum<{
             base_rate: "base_rate";
             rtp_reference: "rtp_reference";
@@ -214,6 +226,7 @@ export declare const ForecastSchema: z.ZodObject<{
             calibrated: z.ZodBoolean;
             skillVsBaseRate: z.ZodNullable<z.ZodNumber>;
             pValue: z.ZodNullable<z.ZodNumber>;
+            permutationP: z.ZodNullable<z.ZodNumber>;
             validated: z.ZodBoolean;
         }, z.core.$strip>>;
     }, z.core.$strip>>;

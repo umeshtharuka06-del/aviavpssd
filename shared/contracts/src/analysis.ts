@@ -69,7 +69,7 @@ export const HistoricalSummarySchema = z.object({
 });
 export type HistoricalSummary = z.infer<typeof HistoricalSummarySchema>;
 
-/* ---------- Next-round forecast experiment (engine "stat-3") ---------- */
+/* ---------- Next-round forecast experiment (engine "stat-4") ---------- */
 
 /**
  * Walk-forward forecast experiment over ONE device's observed rounds on ONE site.
@@ -88,8 +88,10 @@ export type HistoricalSummary = z.infer<typeof HistoricalSummarySchema>;
  *
  * A candidate is "validated" only if, on the test rounds, its log loss is lower than the base
  * rate's by a Diebold–Mariano test (Newey–West variance) at one-sided p < 0.05 ÷ (number of
- * candidate × threshold comparisons), AND its forecasts pass a calibration check (Spiegelhalter
- * |Z| < 1.96). Otherwise the next-round estimate is the base rate, and only if the base rate itself
+ * candidate × threshold comparisons) = `alpha`, AND its forecasts pass a calibration check
+ * (Spiegelhalter |Z| < 1.96), AND the test rounds hold at least `minEvents` events and non-events,
+ * AND — for histories under 1,000 rounds — an exact permutation test gives p < `alpha` too.
+ * Otherwise the next-round estimate is the base rate, and only if the base rate itself
  * passes its calibration check (parametric bootstrap, see ModelScore.calibrationP). Probabilities are estimates with a 95% interval, never guarantees.
  */
 export const FORECAST_MODELS = ['base_rate', 'rtp_reference', 'rolling_50', 'after_previous', 'since_last_hit', 'logistic_recent'] as const;
@@ -120,7 +122,13 @@ export const ModelScoreSchema = z.object({
   skillVsBaseRate: z.number().nullable(),
   /** One-sided Diebold–Mariano p-value for "lower log loss than the base rate"; null for base_rate. */
   pValue: z.number().min(0).max(1).nullable(),
-  /** Passed both the multiple-testing-corrected improvement test and the calibration check. */
+  /**
+   * Exact permutation-test p-value for the same comparison (multipliers shuffled, walk-forward
+   * repeated). Only computed for a candidate that passed every other check on a history under
+   * 1,000 rounds; null otherwise.
+   */
+  permutationP: z.number().min(0).max(1).nullable(),
+  /** Passed every check: improvement (p < alpha, and the permutation test where required), calibration, minimum events. */
   validated: z.boolean(),
 });
 export type ModelScore = z.infer<typeof ModelScoreSchema>;
@@ -134,8 +142,12 @@ export const ThresholdForecastSchema = z.object({
    * validated_model_not_current — a recent-round model was validated, but the latest stored
    *                        round is older than `gapSeconds`, so the rounds just before the next
    *                        one are unknown; the estimate shown is the base rate
+   * insufficient_events  — the test rounds hold fewer than `minEvents` rounds reaching this target
+   *                        (or fewer than `minEvents` not reaching it): it cannot be judged yet; no estimate
    */
-  status: z.enum(['validated_model', 'no_predictive_value', 'not_calibrated', 'validated_model_not_current']),
+  status: z.enum(['validated_model', 'no_predictive_value', 'not_calibrated', 'validated_model_not_current', 'insufficient_events']),
+  /** Test rounds that reached this target. */
+  testEvents: z.number().int().nonnegative(),
   /** The model behind `probability`; null when there is no estimate. */
   selectedModel: ForecastModelSchema.nullable(),
   /** Estimated probability that the NEXT round reaches the threshold; null when not supported. */
@@ -148,13 +160,15 @@ export const ThresholdForecastSchema = z.object({
 export type ThresholdForecast = z.infer<typeof ThresholdForecastSchema>;
 
 export const ForecastSchema = z.object({
-  method: z.literal('walk_forward_v1'),
+  method: z.literal('walk_forward_v2'),
   /** insufficient_data: fewer than `minSampleSize` valid rounds, nothing was evaluated. */
   status: z.enum(['insufficient_data', 'evaluated']),
   sampleSize: z.number().int().nonnegative(),
-  /** trainInitial + minimum test rounds. */
+  /** trainInitial + minTestRounds: below this nothing is evaluated. */
   minSampleSize: z.number().int().positive(),
   trainInitial: z.number().int().positive(),
+  /** Scored test rounds required (a run break makes the next round unscored, so this can lag sampleSize). */
+  minTestRounds: z.number().int().positive(),
   /** Held-out rounds every model was scored on (0 when insufficient). */
   testRounds: z.number().int().nonnegative(),
   refitEvery: z.number().int().positive(),
@@ -163,6 +177,12 @@ export const ForecastSchema = z.object({
   gapSeconds: z.number().int().positive(),
   /** Candidate × threshold comparisons used for the multiple-testing correction. */
   comparisons: z.number().int().nonnegative(),
+  /** Required one-sided p-value: 0.05 ÷ comparisons. */
+  alpha: z.number().positive().max(1),
+  /** Events and non-events each target's test rounds must hold before a model can be validated. */
+  minEvents: z.number().int().positive(),
+  /** Below this many rounds a validated model must also have passed the exact permutation test. */
+  permutationMaxRounds: z.number().int().positive(),
   thresholds: z.array(ThresholdForecastSchema),
 });
 export type Forecast = z.infer<typeof ForecastSchema>;

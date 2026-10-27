@@ -166,7 +166,7 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
         isHistoricalOnly: z.ZodLiteral<true>;
     }, z.core.$strip>>;
     forecast: z.ZodOptional<z.ZodObject<{
-        method: z.ZodLiteral<"walk_forward_v1">;
+        method: z.ZodLiteral<"walk_forward_v2">;
         status: z.ZodEnum<{
             insufficient_data: "insufficient_data";
             evaluated: "evaluated";
@@ -174,11 +174,15 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
         sampleSize: z.ZodNumber;
         minSampleSize: z.ZodNumber;
         trainInitial: z.ZodNumber;
+        minTestRounds: z.ZodNumber;
         testRounds: z.ZodNumber;
         refitEvery: z.ZodNumber;
         segments: z.ZodNumber;
         gapSeconds: z.ZodNumber;
         comparisons: z.ZodNumber;
+        alpha: z.ZodNumber;
+        minEvents: z.ZodNumber;
+        permutationMaxRounds: z.ZodNumber;
         thresholds: z.ZodArray<z.ZodObject<{
             threshold: z.ZodNumber;
             status: z.ZodEnum<{
@@ -186,7 +190,9 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
                 no_predictive_value: "no_predictive_value";
                 not_calibrated: "not_calibrated";
                 validated_model_not_current: "validated_model_not_current";
+                insufficient_events: "insufficient_events";
             }>;
+            testEvents: z.ZodNumber;
             selectedModel: z.ZodNullable<z.ZodEnum<{
                 base_rate: "base_rate";
                 rtp_reference: "rtp_reference";
@@ -217,6 +223,7 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
                 calibrated: z.ZodBoolean;
                 skillVsBaseRate: z.ZodNullable<z.ZodNumber>;
                 pValue: z.ZodNullable<z.ZodNumber>;
+                permutationP: z.ZodNullable<z.ZodNumber>;
                 validated: z.ZodBoolean;
             }, z.core.$strip>>;
         }, z.core.$strip>>;

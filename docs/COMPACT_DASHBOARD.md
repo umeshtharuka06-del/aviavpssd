@@ -1,7 +1,8 @@
 # Compact statistics dashboard
 
-The side panel's main section is a **tested next-round estimate** from the server's walk-forward
-forecast experiment (engine `stat-3`, see [NEXT_ROUND_FORECAST.md](NEXT_ROUND_FORECAST.md)).
+The side panel's main section is the **Next round signal**: one status from the server's walk-forward
+forecast experiment (engine `stat-4`, see [NEXT_ROUND_FORECAST.md](NEXT_ROUND_FORECAST.md)), then one
+line per target.
 A compact summary of the rounds **this device** has observed is secondary. It never forecasts a
 multiplier.
 
@@ -15,21 +16,34 @@ Main view, top to bottom:
 |---|---|
 | Connection status (Connected / Offline / Checking) | result of the latest background → API call |
 | Site + one-line collection status (recording / waiting / paused / unreadable / game not on this page) plus any error | the active tab's frame reports, upload status, last refresh error |
-| **Next Round: What to Expect**: status chip (*Tested · no pattern found* / *Model validated* / *Not enough data* / *Server update needed*), estimated chance of reaching 2× / 5× / 10× with a 95% range, which model it comes from, the reliability measured on unseen rounds, and one line on uncertainty. Below the minimum: "Insufficient data for a meaningful analysis." with progress (*n of 400 rounds needed*). | `forecast` from `POST /v1/analysis`, read by `extension/src/sidepanel/outlook.ts` |
+| **Next round signal**: one headline status (below), a one-sentence reason, and per target (2× / 5× / 10×) its own status — *Signal*, *No signal*, *Rate changed*, *Paused*, *Collecting* or *Unverified*. A probability with its 95% range, the model, and the baseline comparison (log-loss improvement, p-value vs the required level, exact permutation p when used) appear **only** on a verified *Signal* row. Then: number of unseen test rounds, time the forecast was computed, and what the status means. Before the 100-round minimum: progress bar *n of 100 rounds* (or *n of 50 test rounds* when breaks in collection leave too few). | `forecast` from `POST /v1/analysis`, read by `extension/src/sidepanel/outlook.ts` |
 | **Your past rounds** (compact): rounds recorded, latest round age, one line of past shares once the history minimum is reached, TEST DATA label when relevant | `summary.*`, `isTestData` |
 | Last-updated time + Refresh | client clock at the last successful update |
-| **Details** (collapsed): per-target model test (best recent-round model, skill, p-value vs required level, base-rate calibration, RTP reference), test design, sample size, counts, average, data source, engine, errors, RTP source, method | same response + game reference |
+| **Details** (collapsed): per-target model test (events in the test rounds, best recent-round model, skill, p-value vs required level, exact-test p, base-rate calibration, RTP reference), test design, sample size, counts, average, data source, engine, errors, RTP source, method | same response + game reference |
 
 The 2×/5×/10× shares moved from "Your past rounds" into the outlook so they appear once. The
 separate "Historical rounds below 2×" card was removed from the main view: it is 100% minus the
 ≥ 2× figure, so it repeated information. Its count stays in Details (`summary.below2x` is unchanged
 in the API).
 
-## Next Round: What to Expect
+## Next round signal
 
-Method, models, validation rules, simulation results and limitations:
-[NEXT_ROUND_FORECAST.md](NEXT_ROUND_FORECAST.md). The extension computes nothing itself; it shows the
-server's `forecast` exactly, and says "Server update needed" when a `stat-2` server omits it.
+| Headline | Shown when |
+|---|---|
+| **SIGNAL DETECTED** | at least one target has a recent-round model that passed every check (significance after the multiple-testing correction, the exact permutation test below 1,000 rounds, calibration, ≥ 10 events and ≥ 10 non-events in the test rounds) **and** the client's consistency check of that claim |
+| **NO RELIABLE SIGNAL** | the test ran and at least one target could be judged, but no model beat the base rate by enough (or the chance changed over time) |
+| **COLLECTING DATA** | fewer than 100 rounds or 50 scorable test rounds; or the test ran but no target has enough events yet; or a validated model is paused because the latest round is over 2 min old |
+| **SERVER UPDATE NEEDED** | the response has no forecast this version can read (server older than `stat-4`) |
+| **ANALYSIS UNAVAILABLE** | the request failed, the latest refresh failed (the last result stays visible but is marked out of date), the server runs the test-data provider, or the server's result fails the client's consistency check |
+
+Each status has a text label and a glyph (◆ – … ↻ !), so colour is never the only cue; the colours
+are restrained (signal is blue, not green). Reaching 100 rounds only starts the test: it never
+shows a signal by itself. Method, validation rules, simulation results and limitations:
+[NEXT_ROUND_FORECAST.md](NEXT_ROUND_FORECAST.md). The extension computes nothing itself.
+
+**Preview without Chrome:** `npm run preview:panel -w @aviator/extension` → http://localhost:5174/
+shows every state at side-panel width (320 / 360 / 420 px) plus a live simulation, using the real
+panel code and the real engine on simulated rounds.
 
 Removed from the user-facing dashboard **and** from the API: "Recent vs your baseline", the last-50 /
 100 / 250 / 500 rolling windows and their table, Wilson confidence intervals, low-multiplier streaks,
@@ -141,7 +155,7 @@ Not deployed. Every step below needs your approval.
 2. **Backend.** No database migration. Push to `main`, then in Portainer → Stacks → `aviator` →
    **Pull and redeploy**. The compose file now defaults `ANALYSIS_PROVIDER` to `statistical` and passes
    `ANALYSIS_MIN_SAMPLE_SIZE` (default 100); an explicit stack value still overrides either.
-3. **Verify:** `POST /v1/analysis` returns `engine.version: "stat-3"`, a `summary` and a `forecast` object, with no
+3. **Verify:** `POST /v1/analysis` returns `engine.version: "stat-4"`, a `summary` and a `forecast` object (`method: "walk_forward_v2"`), with no
    `metrics`, `patterns` or `signal`.
 4. **Extension:** bump `extension/package.json` `version`, then
    `EXTENSION_API_BASE_URL=https://api.yourdomain.com npm run package -w @aviator/extension` and upload
