@@ -1,0 +1,142 @@
+# Production stack for the VPS. Run from this directory:  docker compose up -d --build
+#
+#   caddy (80/443, public) ──edge──▶ api (8080, not published) ──db──▶ postgres (5432, NOT published)
+#                                            retention-worker ──db──┘
+#
+# Every ${VAR} below is filled in by Compose interpolation: from the Portainer stack's
+# "Environment variables" when deployed through Portainer, or from ./.env (chmod 600, never
+# committed) when run with plain `docker compose`. No env file is required to exist.
+# PostgreSQL has no published port and sits on an internal-only network: it is unreachable from
+# the internet and from the host's public interfaces.
+name: aviator
+
+# Runtime environment of the backend containers (validated by backend/src/config/env.ts).
+# Optional values default to the same defaults as env.ts.
+x-backend-env: &backend-env
+  DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL (postgres://USER:PASSWORD@postgres:5432/DB)}
+  CODE_PEPPER: ${CODE_PEPPER:?set CODE_PEPPER}
+  DEVICE_PEPPER: ${DEVICE_PEPPER:?set DEVICE_PEPPER}
+  IP_HASH_PEPPER: ${IP_HASH_PEPPER:?set IP_HASH_PEPPER}
+  ADMIN_SERVICE_KEY: ${ADMIN_SERVICE_KEY:?set ADMIN_SERVICE_KEY}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+  DEFAULT_DEVICE_LIMIT: ${DEFAULT_DEVICE_LIMIT:-5}
+  CUSTOMER_SESSION_TTL_HOURS: ${CUSTOMER_SESSION_TTL_HOURS:-168}
+  ADMIN_SESSION_TTL_HOURS: ${ADMIN_SESSION_TTL_HOURS:-8}
+  ACCEPTED_SITE_IDS: ${ACCEPTED_SITE_IDS:-onexbet,melbet,starz888}
+  ACCEPTED_SITE_DOMAINS: ${ACCEPTED_SITE_DOMAINS:-}
+  # Production serves real descriptive statistics; "mock" (labelled test data) only if set explicitly.
+  ANALYSIS_PROVIDER: ${ANALYSIS_PROVIDER:-statistical}
+  ANALYSIS_MIN_SAMPLE_SIZE: ${ANALYSIS_MIN_SAMPLE_SIZE:-100}
+  RETENTION_INTERVAL_SECONDS: ${RETENTION_INTERVAL_SECONDS:-300}
+  SECURITY_EVENT_RETENTION_DAYS: ${SECURITY_EVENT_RETENTION_DAYS:-90}
+
+# Shared by migrate, api and retention-worker. Each of them declares the SAME build (repository
+# root as context, so the image can include shared/contracts and database/migrations) and the SAME
+# image tag, so `docker compose build api` (or migrate / retention-worker) works and all three always
+# run identical code. pull_policy: build rebuilds from the checked-out code on every `up`
+# (Portainer redeploys may not pass --build); unchanged layers come from the build cache.
+x-backend: &backend
+  image: aviator-backend:${IMAGE_TAG:-latest}
+  build: { context: ../.., dockerfile: backend/Dockerfile }
+  pull_policy: build
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging: &logging
+    driver: json-file
+    options: { max-size: '10m', max-file: '5' } # bounded container logs (≈50 MB per service)
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aviator}
+      POSTGRES_USER: ${POSTGRES_USER:-aviator_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      TZ: UTC
+    # Never log statements (they could contain history values); log only errors and slow-query
+    # durations without parameters.
+    command: ['postgres', '-c', 'log_statement=none', '-c', 'log_min_duration_statement=-1', '-c', 'timezone=UTC']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [db]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  migrate:
+    <<: *backend
+    command: ['node', 'dist/src/database/cli.js', 'migrate']
+    restart: 'no'
+    environment: *backend-env
+    networks: [db]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  api:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '8080'
+      TRUST_PROXY: 10.200.0.0/24 # only Caddy's network may set X-Forwarded-For (must equal the edge subnet)
+    expose: ['8080']
+    networks: [db, edge]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  retention-worker:
+    <<: *backend
+    command: ['node', 'dist/src/workers/retention-worker.js']
+    environment:
+      <<: *backend-env
+      NODE_ENV: production
+    networks: [db]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    # Unhealthy if the last successful pass is older than 3 intervals or any observation is older
+    # than 12 h + grace. `docker compose ps` / your monitoring should alert on "unhealthy".
+    healthcheck:
+      test: ['CMD', 'node', 'dist/src/database/cli.js', 'retention-status']
+      interval: 5m
+      timeout: 30s
+      retries: 2
+      start_period: 2m
+
+  caddy:
+    # The Caddyfile is baked into the image instead of bind-mounted: Portainer Git stacks are
+    # cloned inside the Portainer container, so a relative bind-mount path does not exist on the host.
+    build: { context: ../reverse-proxy }
+    image: aviator-caddy:${IMAGE_TAG:-latest}
+    pull_policy: build
+    restart: unless-stopped
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on: [api]
+    logging: *logging
+
+networks:
+  db:
+    internal: true # no route to/from the outside world
+  edge:
+    ipam:
+      # Outside Docker's default pools (172.17-31.0.0/16, 192.168.0.0/16) so it cannot collide
+      # with networks other stacks create automatically.
+      config: [{ subnet: 10.200.0.0/24 }]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
