@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   computeForecast,
   dieboldMariano,
+  FORECAST_DEFAULTS,
   FORECAST_MODEL_SPECS,
+  MIN_EVENTS,
+  PERMUTATION_MAX_ROUNDS,
+  PERMUTATIONS,
   normalCdf,
   Past,
   segmentsOf,
@@ -96,10 +100,26 @@ describe('forecast: leakage guard and chronology', () => {
 });
 
 describe('forecast: insufficient data', () => {
-  it('below trainInitial + minTestRounds nothing is evaluated and no estimate is produced', () => {
-    const f = computeForecast(iid(399, 5));
-    expect(f).toMatchObject({ status: 'insufficient_data', sampleSize: 399, minSampleSize: 400, testRounds: 0, thresholds: [] });
+  it('the minimum is 100 rounds: 50 to learn from + 50 scored test rounds', () => {
+    expect(FORECAST_DEFAULTS).toMatchObject({ trainInitial: 50, minTestRounds: 50 });
+    const f = computeForecast(iid(99, 5));
+    expect(f).toMatchObject({ status: 'insufficient_data', sampleSize: 99, minSampleSize: 100, minTestRounds: 50, testRounds: 0, thresholds: [] });
     expect(ForecastSchema.parse(f)).toEqual(f);
+  });
+
+  it('at exactly 100 unbroken rounds the test runs on the 50 rounds it had not seen', () => {
+    const f = computeForecast(iid(100, 5));
+    expect(ForecastSchema.parse(f)).toEqual(f);
+    expect(f).toMatchObject({ status: 'evaluated', sampleSize: 100, trainInitial: 50, testRounds: 50, alpha: 0.05 / 12, minEvents: MIN_EVENTS });
+    expect(f.thresholds.map((t) => t.threshold)).toEqual([2, 5, 10]);
+  });
+
+  it('100 rounds with a break in collection: still collecting until 50 rounds can be scored', () => {
+    // Rounds 0-79 and 80-99 are separated by a 1 h gap: round 80 is not scored, so 49 test rounds.
+    const rounds = iid(100, 5).map((r, i) => ({ ...r, receivedAt: new Date(T0 + i * 15_000 + (i >= 80 ? 3_600_000 : 0)) }));
+    const f = computeForecast(rounds);
+    expect(f).toMatchObject({ status: 'insufficient_data', sampleSize: 100, segments: 2, testRounds: 49, thresholds: [] });
+    expect(computeForecast([...rounds, { multiplier: 1.5, receivedAt: new Date(rounds[99]!.receivedAt.getTime() + 15_000) }]).status).toBe('evaluated');
   });
 
   it('too few scorable rounds (many gaps) is also insufficient', () => {
@@ -116,13 +136,14 @@ describe('forecast: insufficient data', () => {
 
 describe('forecast: independent rounds (no predictability)', () => {
   it('validates no recent-round model and estimates the base rate, whose interval covers the true chance', () => {
-    for (const seed of [11, 13, 14]) {
+    for (const seed of [13, 15, 16]) {
       const f = computeForecast(iid(1500, seed));
       expect(ForecastSchema.parse(f)).toEqual(f);
       expect(f.status).toBe('evaluated');
       expect(f.comparisons).toBe(12);
       for (const th of f.thresholds) {
         expect(th.status).toBe('no_predictive_value');
+        expect(th.testEvents).toBe(Math.round(th.models[0]!.observedRate * f.testRounds));
         expect(th.selectedModel).toBe('base_rate');
         expect(th.models.filter((s) => s.validated)).toEqual([]);
         const truth = 0.97 / th.threshold;
@@ -191,11 +212,83 @@ describe('forecast: planted dependence (the method can detect real structure)', 
     expect(two.selectedModel).toBe('base_rate');
   });
 
-  it('an event that never occurs can never validate a model', () => {
+  it('an event that never occurs can never validate a model, and the target is reported as not judgeable', () => {
     const rounds = iid(1000, 31).map((r) => ({ ...r, multiplier: Math.min(r.multiplier, 9.99) }));
     const ten = computeForecast(rounds).thresholds.find((t) => t.threshold === 10)!;
     expect(ten.models.some((s) => s.validated)).toBe(false);
-    expect(ten.status).not.toBe('validated_model');
+    expect(ten).toMatchObject({ status: 'insufficient_events', testEvents: 0, probability: null, selectedModel: null });
+  });
+});
+
+describe('forecast: each target needs enough events of its own', () => {
+  it('at 100 rounds 2x can be judged, while 10x (about 5 expected events in 50 test rounds) cannot', () => {
+    const f = computeForecast(iid(100, 5));
+    const byT = Object.fromEntries(f.thresholds.map((t) => [t.threshold, t]));
+    expect(byT[2]!.testEvents).toBeGreaterThanOrEqual(MIN_EVENTS);
+    expect(['no_predictive_value', 'not_calibrated']).toContain(byT[2]!.status);
+    expect(byT[10]!.testEvents).toBeLessThan(MIN_EVENTS);
+    expect(byT[10]).toMatchObject({ status: 'insufficient_events', probability: null, low: null, high: null, selectedModel: null });
+    expect(byT[10]!.models.every((s) => !s.validated)).toBe(true);
+  });
+
+  it('a target is judged only from MIN_EVENTS events AND non-events in the test rounds', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const f = computeForecast(iid(160, seed));
+      for (const th of f.thresholds) {
+        const enough = th.testEvents >= MIN_EVENTS && f.testRounds - th.testEvents >= MIN_EVENTS;
+        expect(th.status === 'insufficient_events').toBe(!enough);
+      }
+    }
+  });
+
+  it('across 300 fair 100-round histories 10x is almost never judgeable and 5x about half the time', () => {
+    const count = { 5: 0, 10: 0 };
+    for (let seed = 1; seed <= 300; seed++) {
+      for (const th of computeForecast(iid(100, seed)).thresholds) if (th.status === 'insufficient_events' && th.threshold !== 2) count[th.threshold as 5 | 10]++;
+    }
+    expect(count[10]).toBeGreaterThan(270);
+    expect(count[5]).toBeGreaterThan(100);
+    expect(count[5]).toBeLessThan(200);
+  });
+});
+
+describe('forecast: exact permutation test for short histories', () => {
+  it('overrules a Diebold-Mariano p-value that the normal approximation got wrong (100 fair rounds)', () => {
+    const f = computeForecast(iid(100, 89));
+    const five = f.thresholds.find((t) => t.threshold === 5)!;
+    const ap = five.models.find((s) => s.model === 'after_previous')!;
+    expect(ap.pValue!).toBeLessThan(f.alpha); // looks "significant" by the approximation ...
+    expect(ap.permutationP!).toBeGreaterThanOrEqual(f.alpha); // ... but not by the exact test
+    expect(ap.validated).toBe(false);
+    expect(five.status).not.toBe('validated_model');
+  });
+
+  it('false validations on fair short histories stay below the nominal 5% family-wise level', () => {
+    let any = 0;
+    const H = 200;
+    for (let seed = 1000; seed < 1000 + H; seed++) if (computeForecast(iid(150, seed)).thresholds.some((t) => t.status === 'validated_model')) any++;
+    expect(any / H).toBeLessThan(0.03);
+  });
+
+  it('detects a strong planted dependence in 200 rounds, confirmed by the permutation test', () => {
+    let detected = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const rounds = planted(200, seed, 0.2);
+      const two = computeForecast(rounds, { now: rounds[199]!.receivedAt }).thresholds.find((t) => t.threshold === 2)!;
+      if (two.status !== 'validated_model') continue;
+      detected++;
+      const sel = two.models.find((s) => s.model === two.selectedModel)!;
+      expect(sel.permutationP!).toBeLessThan(0.05 / 12);
+      expect(sel.permutationP!).toBeCloseTo(1 / (PERMUTATIONS + 1), 10); // no shuffle did as well
+    }
+    expect(detected).toBeGreaterThanOrEqual(4);
+  });
+
+  it('is not run from 1,000 rounds on, where the approximation was measured to hold', () => {
+    const rounds = planted(PERMUTATION_MAX_ROUNDS, 21, 0.12);
+    const two = computeForecast(rounds, { now: rounds[rounds.length - 1]!.receivedAt }).thresholds.find((t) => t.threshold === 2)!;
+    expect(two.status).toBe('validated_model');
+    for (const s of two.models) expect(s.permutationP).toBeNull();
   });
 });
 

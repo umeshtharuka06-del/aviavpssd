@@ -46,7 +46,7 @@ describe('analysis (statistical provider)', () => {
     const body = AnalysisResponseSchema.parse(res.json());
     expect(body.status).toBe('insufficient_data');
     expect(body.isTestData).toBe(false);
-    expect(body.engine).toEqual({ kind: 'live', version: 'stat-3' });
+    expect(body.engine).toEqual({ kind: 'live', version: 'stat-4' });
     expect(body.observationsConsidered).toBe(0);
   });
 
@@ -66,13 +66,13 @@ describe('analysis (statistical provider)', () => {
     const body = AnalysisResponseSchema.parse(res.json());
     expect(body.status).toBe('ok');
     expect(body.isTestData).toBe(false);
-    expect(body.engine).toEqual({ kind: 'live', version: 'stat-3' });
+    expect(body.engine).toEqual({ kind: 'live', version: 'stat-4' });
     expect(body.observationsConsidered).toBe(10);
     expect(body.windowHours).toBe(12);
     expect(body.items.length).toBe(6);
     expect(body.summary?.sufficiency).toBe('sufficient');
     // 10 rounds are far below the forecast minimum: the experiment reports that, with no estimate.
-    expect(body.forecast).toMatchObject({ method: 'walk_forward_v1', status: 'insufficient_data', sampleSize: 10, thresholds: [] });
+    expect(body.forecast).toMatchObject({ method: 'walk_forward_v2', status: 'insufficient_data', sampleSize: 10, minSampleSize: 100, thresholds: [] });
   });
 
   it('response validates against AnalysisResponseSchema', async () => {

@@ -39,15 +39,15 @@ function main(argv) {
     }
     console.log(`rounds ${f.sampleSize} (skipped ${skipped}) · runs ${f.segments} · test rounds ${f.testRounds} · refit every ${f.refitEvery} · ${f.status}`);
     if (f.status === 'insufficient_data') {
-        console.log(`needs at least ${f.minSampleSize} rounds (${f.trainInitial} training + scored test rounds)`);
+        console.log(`needs at least ${f.minSampleSize} rounds (${f.trainInitial} training + ${f.minTestRounds} scored test rounds; ${f.testRounds} scored so far)`);
         return;
     }
     const pct = (v) => (v == null ? '   —  ' : `${(v * 100).toFixed(2).padStart(6)}%`);
     for (const th of f.thresholds) {
-        console.log(`\n≥ ${th.threshold}×  ${th.status}  estimate ${pct(th.probability)} [${pct(th.low)} – ${pct(th.high)}]  model ${th.selectedModel ?? '—'}`);
-        console.log('  model            log loss  skill     p (DM)   calib Z  calibrated  validated');
+        console.log(`\n≥ ${th.threshold}×  ${th.status}  estimate ${pct(th.probability)} [${pct(th.low)} – ${pct(th.high)}]  model ${th.selectedModel ?? '—'}  events ${th.testEvents} of ${f.testRounds} (need ≥ ${f.minEvents} each way)`);
+        console.log(`  model            log loss  skill     p (DM)   p (perm)  calib Z  calibrated  validated   (needs p < ${f.alpha.toFixed(4)})`);
         for (const s of th.models) {
-            console.log(`  ${s.model.padEnd(16)} ${s.logLoss.toFixed(4)}   ${s.skillVsBaseRate == null ? '   —   ' : pct(s.skillVsBaseRate)}  ${s.pValue == null ? '  —   ' : s.pValue.toFixed(4)}   ${s.calibrationZ.toFixed(2).padStart(6)}   ${String(s.calibrated).padEnd(10)}  ${s.validated}`);
+            console.log(`  ${s.model.padEnd(16)} ${s.logLoss.toFixed(4)}   ${s.skillVsBaseRate == null ? '   —   ' : pct(s.skillVsBaseRate)}  ${s.pValue == null ? '  —   ' : s.pValue.toFixed(4)}   ${s.permutationP == null ? '  —   ' : s.permutationP.toFixed(4)}   ${s.calibrationZ.toFixed(2).padStart(6)}   ${String(s.calibrated).padEnd(10)}  ${s.validated}`);
         }
     }
 }

@@ -7,7 +7,7 @@ const COLLECTING_NOTICE = 'Collecting data — too few rounds observed yet for t
     'Past results do not predict future outcomes.';
 export class StatisticalAnalysisProvider {
     kind = 'live';
-    version = 'stat-3';
+    version = 'stat-4';
     isTestData = false;
     minSampleSize;
     /** Recent forecast results keyed by a fingerprint of the input rounds (identical input → identical result). */

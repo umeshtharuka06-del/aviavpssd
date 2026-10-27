@@ -18,7 +18,7 @@ export interface StatisticalProviderOptions {
 
 export class StatisticalAnalysisProvider implements AnalysisProvider {
   readonly kind = 'live' as const;
-  readonly version = 'stat-3';
+  readonly version = 'stat-4';
   readonly isTestData = false;
   private readonly minSampleSize: number;
   /** Recent forecast results keyed by a fingerprint of the input rounds (identical input → identical result). */
