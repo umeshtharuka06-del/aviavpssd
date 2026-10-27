@@ -1,0 +1,57 @@
+# Caddy terminates HTTPS (automatic Let's Encrypt certificates) and forwards to the API.
+{
+	email {$ACME_EMAIL}
+	servers {
+		# Only Caddy itself is trusted to set client-IP headers; incoming ones are replaced.
+		trusted_proxies static private_ranges
+	}
+}
+
+{$API_DOMAIN} {
+	# Bodies larger than this never reach the API (the API enforces 8 KB itself as well).
+	request_body {
+		max_size 64KB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	# Only the versioned API is served. Everything else is 404.
+	@api path /v1/*
+	handle @api {
+		reverse_proxy api:8080 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		respond 404
+	}
+
+	# Access log without request headers (they carry bearer tokens and the admin service key)
+	# and with client IPs truncated.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				resp_headers delete
+				request>uri query {
+					delete q
+				}
+				request>remote_ip ip_mask {
+					ipv4 24
+					ipv6 48
+				}
+				request>client_ip ip_mask {
+					ipv4 24
+					ipv6 48
+				}
+			}
+		}
+	}
+}
