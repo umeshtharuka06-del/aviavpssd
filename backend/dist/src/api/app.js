@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { errorFacts, FAILURE_MESSAGE, failureCause } from '../diagnostics.js';
 import rateLimit from '@fastify/rate-limit';
 import { MAX_CUSTOMER_BODY_BYTES } from '@aviator/contracts';
 import Fastify, {} from 'fastify';
@@ -53,9 +54,12 @@ export async function buildApp(ctx, opts = {}) {
     app.setErrorHandler((caught, request, reply) => {
         const error = caught;
         const send = (status, code, message, details) => reply.status(status).send({ error: { code, message, requestId: request.id, ...(details ? { details } : {}) } });
+        const where = { method: request.method, route: request.routeOptions?.url ?? 'unknown' };
         if (error instanceof AppError) {
             if (error.code === 'RATE_LIMITED')
                 return send(429, error.code, error.message, error.details);
+            if (error.status >= 500 && error.cause !== undefined)
+                request.log.error({ ...where, appCode: error.code, cause: errorFacts(error.cause) }, 'request failed');
             return send(error.status, error.code, error.message, error.details);
         }
         const e = error;
@@ -70,7 +74,12 @@ export async function buildApp(ctx, opts = {}) {
         }
         if (error instanceof SyntaxError || e.statusCode === 400)
             return send(400, 'VALIDATION_FAILED', 'Malformed request.');
-        request.log.error({ err: { message: error.message, code: e.code } }, 'unhandled error');
+        request.log.error({ ...where, err: errorFacts(error) }, 'unhandled error');
+        // A missing migration or an unreachable database is an outage, not a bug in the request: say
+        // so (503, fixed wording, no schema names) so clients retry and the panel can show the cause.
+        const cause = failureCause(error);
+        if (cause === 'database_schema_outdated' || cause === 'database_unavailable')
+            return send(503, 'SERVICE_UNAVAILABLE', FAILURE_MESSAGE[cause], { cause });
         return send(500, 'INTERNAL_ERROR', 'An internal error occurred.');
     });
     app.setNotFoundHandler((request, reply) => {

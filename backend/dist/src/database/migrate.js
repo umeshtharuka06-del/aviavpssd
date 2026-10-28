@@ -19,7 +19,7 @@ export function defaultMigrationsDir() {
     }
     throw new Error('database/migrations not found; set MIGRATIONS_DIR');
 }
-async function listMigrations(dir) {
+export async function listMigrations(dir) {
     const files = (await readdir(dir)).filter((f) => /^\d{4}_[a-z0-9_]+\.sql$/.test(f)).sort();
     return Promise.all(files.map(async (name) => {
         const sql = await readFile(join(dir, name), 'utf8');
@@ -65,4 +65,23 @@ export async function migrate(pool, dir = defaultMigrationsDir()) {
         client.release();
     }
     return applied;
+}
+/**
+ * Read-only: compares the migration files shipped with this build with schema_migrations. A
+ * non-empty `pending` means the code may use tables or columns the database does not have yet,
+ * so requests that touch them fail with SQLSTATE 42P01 / 42703 until `migrate` runs.
+ */
+export async function schemaStatus(pool, dir = defaultMigrationsDir()) {
+    const files = await listMigrations(dir);
+    const { rows: exists } = await pool.query("SELECT to_regclass('public.schema_migrations')::text AS t");
+    const applied = new Map();
+    if (exists[0]?.t) {
+        const { rows } = await pool.query('SELECT name, checksum FROM schema_migrations');
+        for (const r of rows)
+            applied.set(r.name, r.checksum);
+    }
+    return {
+        pending: files.filter((f) => !applied.has(f.name)).map((f) => f.name),
+        modified: files.filter((f) => applied.has(f.name) && applied.get(f.name) !== f.checksum).map((f) => f.name),
+    };
 }

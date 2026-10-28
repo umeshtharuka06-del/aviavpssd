@@ -1,4 +1,5 @@
 import { HISTORY_RETENTION_HOURS } from '@aviator/contracts';
+import { errorFacts } from '../diagnostics.js';
 import { AppError } from '../api/errors.js';
 import { isSiteAccepted } from '../config/env.js';
 import { withTransaction } from '../database/pool.js';
@@ -118,6 +119,6 @@ export async function syncLedgerSafely(ctx, device, siteId) {
         await syncLedger(ctx.pool, device, siteId);
     }
     catch (err) {
-        console.error(JSON.stringify({ level: 'error', msg: 'forecast ledger sync failed', code: err.code ?? 'unknown' }));
+        console.error(JSON.stringify({ level: 'error', msg: 'forecast ledger sync failed', siteId, err: errorFacts(err) }));
     }
 }

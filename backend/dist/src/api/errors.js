@@ -24,11 +24,15 @@ const STATUS = {
 export class AppError extends Error {
     code;
     details;
+    cause;
     status;
-    constructor(code, message, details) {
+    constructor(code, message, details, 
+    /** Internal cause of a 5xx; written to the server log (errorFacts), never to the response. */
+    cause) {
         super(message);
         this.code = code;
         this.details = details;
+        this.cause = cause;
         this.status = STATUS[code];
     }
 }
