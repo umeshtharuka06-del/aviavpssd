@@ -5,6 +5,7 @@ import {
   SIGNAL_CANDIDATES,
   SIGNAL_MODELS,
   SIGNAL_THRESHOLDS,
+  targetHit,
   SIGNAL_WARMUP_ROUNDS,
   REPRESENTATIVE_MIN_SAMPLE,
   type ForecastRecord,
@@ -368,14 +369,14 @@ const BINS = [0, 0.1, 0.2, 0.35, 0.5, 0.65, 1] as const;
 const mean = (a: readonly number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
 
 export function performanceOf(entries: readonly LedgerEntry[], rules = SIGNAL_RULES): Performance {
-  type S = { p: number[]; b: number[]; y: number };
+  type S = { p: number[]; b: number[]; y: number; m: number };
   const scored: S[] = [];
   let voided = 0;
   let pending = 0;
   for (const e of entries) {
     if (!e.outcome) pending++;
     else if (e.outcome.status === 'void') voided++;
-    else scored.push({ p: e.forecast.probabilities, b: e.forecast.vectors.baseline, y: e.outcome.range });
+    else scored.push({ p: e.forecast.probabilities, b: e.forecast.vectors.baseline, y: e.outcome.range, m: e.outcome.multiplier });
   }
   const hit = (s: S[], key: 'p' | 'b') => (s.length ? s.filter((x) => topRange(x[key]) === x.y).length / s.length : null);
   const ll = (s: S[], key: 'p' | 'b') => mean(s.map((x) => logLoss(x[key], x.y)));
@@ -395,7 +396,7 @@ export function performanceOf(entries: readonly LedgerEntry[], rules = SIGNAL_RU
     const pt = (v: number[]) => v.slice(from).reduce((a, x) => a + x, 0);
     const ps = scored.map((x) => pt(x.p));
     const bs = scored.map((x) => pt(x.b));
-    const ys = scored.map((x) => (x.y >= from ? 1 : 0));
+    const ys = scored.map((x) => (targetHit(x.m, t) ? 1 : 0)); // the actual multiplier reached the threshold
     const events = ys.reduce<number>((a, v) => a + v, 0);
     const nonEvents = ys.length - events;
     const bl = (p: number[]) => mean(p.map((v, i) => -(ys[i] ? LN(clipP(v)) : LN(clipP(1 - v)))));

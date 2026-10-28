@@ -1,4 +1,4 @@
-import { NextRoundSignalSchema, rangeIndex, REPRESENTATIVE_MIN_SAMPLE, SIGNAL_WARMUP_ROUNDS, thresholdProbabilities } from '@aviator/contracts';
+import { NextRoundSignalSchema, rangeHit, rangeIndex, REPRESENTATIVE_MIN_SAMPLE, targetHit, SIGNAL_WARMUP_ROUNDS, thresholdProbabilities } from '@aviator/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   breaksOf,
@@ -323,5 +323,42 @@ describe('representative multiplier (median inside the most likely range)', () =
     expect(rangeIndex(s.representative!.multiplier!)).toBe(s.representative!.range);
     const warming = asRounds(fairSequence(10, 13));
     expect(buildSignal(warming, replay(warming).entries, null).representative).toBeNull();
+  });
+});
+
+describe('range hit and target hit are separate scores, judged from the numeric multiplier', () => {
+  const cases: Array<[number, number, boolean]> = [
+    // [actual, target, reached]
+    [1.99, 2, false], [2.0, 2, true], [4.0, 2, true], [4.99, 2, true],
+    [4.0, 5, false], [4.99, 5, false], [5.0, 5, true], [9.99, 5, true],
+    [9.99, 10, false], [10.0, 10, true], [250, 10, true], [1.0, 2, false],
+  ];
+  it.each(cases)('target: %s× vs %s× target → reached %s', (m, t, hit) => expect(targetHit(m, t)).toBe(hit));
+
+  it('a 4.00× round is a hit for a 2× target, a miss for 5×, and inside 2.00–4.99× only', () => {
+    expect([targetHit(4, 2), targetHit(4, 5), targetHit(4, 10)]).toEqual([true, false, false]);
+    expect([0, 1, 2, 3].map((k) => rangeHit(4, k))).toEqual([false, true, false, false]);
+  });
+
+  it('range boundaries: the lower bound belongs to the range, the upper bound to the next one', () => {
+    const table: Array<[number, number]> = [[1.0, 0], [1.99, 0], [2.0, 1], [4.99, 1], [5.0, 2], [9.99, 2], [10.0, 3], [1000, 3]];
+    for (const [m, k] of table) {
+      expect([0, 1, 2, 3].filter((r) => rangeHit(m, r))).toEqual([k]);
+      expect(rangeIndex(m)).toBe(k);
+    }
+  });
+
+  it('float noise never moves a boundary', () => {
+    expect(targetHit(0.1 * 3 * (2 / 0.3), 2)).toBe(true); // 1.9999999999999998
+    expect(rangeHit(4.999999999999, 1)).toBe(false); // rounds to 5.00
+    expect(rangeHit(2 - 1e-12, 1)).toBe(true);
+  });
+
+  it('threshold events in the performance record count actual multipliers at or above each target', () => {
+    const ms = [...fairSequence(30, 31), 1.99, 2.0, 4.99, 5.0, 9.99, 10.0];
+    const rounds = asRounds(ms);
+    const s = buildSignal(rounds, replay(rounds).entries, null);
+    const scoredMs = s.history.length ? replay(rounds).entries.flatMap((e) => (e.outcome?.status === 'scored' ? [e.outcome.multiplier] : [])) : [];
+    for (const t of s.performance.thresholds) expect(t.events).toBe(scoredMs.filter((m) => m >= t.threshold).length);
   });
 });

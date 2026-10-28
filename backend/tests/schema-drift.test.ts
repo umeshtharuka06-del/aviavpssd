@@ -106,7 +106,9 @@ describe('API code newer than the database schema (migrations 0004/0005 not appl
   it('logs never contain the bearer token or the submitted multipliers', () => {
     const all = h.logs.join('\n');
     expect(all).not.toContain(token);
-    expect(all).not.toContain('13.4');
+    // Timing fields are numbers like 13.494…, which would match the multiplier by chance; drop them first.
+    const withoutTimings = all.replace(/"(responseTime|time)":[0-9.]+/g, '');
+    expect(withoutTimings).not.toContain('13.4');
   });
 
   it('after the pending migrations run, the same requests succeed and existing history is preserved', async () => {
