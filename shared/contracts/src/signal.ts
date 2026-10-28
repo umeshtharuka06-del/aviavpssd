@@ -157,6 +157,10 @@ export const PerformanceSchema = z.object({
     topRangeHitRate: Prob.nullable(),
     logLoss: z.number().nonnegative().nullable(),
     baselineLogLoss: z.number().nonnegative().nullable(),
+    /** stat-5.2+ (absent from older servers): baseline hit rate and Brier over the same window. */
+    baselineTopRangeHitRate: Prob.nullable().optional(),
+    brier: z.number().min(0).max(2).nullable().optional(),
+    baselineBrier: z.number().min(0).max(2).nullable().optional(),
   }),
   thresholds: z.array(ThresholdPerformanceSchema),
 });

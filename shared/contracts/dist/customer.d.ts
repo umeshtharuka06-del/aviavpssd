@@ -364,6 +364,9 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
                 topRangeHitRate: z.ZodNullable<z.ZodNumber>;
                 logLoss: z.ZodNullable<z.ZodNumber>;
                 baselineLogLoss: z.ZodNullable<z.ZodNumber>;
+                baselineTopRangeHitRate: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+                brier: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
+                baselineBrier: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
             }, z.core.$strip>;
             thresholds: z.ZodArray<z.ZodObject<{
                 threshold: z.ZodNumber;
