@@ -51,3 +51,32 @@ Audited 2026-10-28, before any code was changed.
 ## What is preserved
 
 Activation, sessions, device limits, site permissions, collection, upload and the 12 h retention are unchanged. The database changes are additive (migration `0004`), and no existing row is modified or deleted. `stat-4`'s `forecast` field is still returned, so extension 0.1.5 keeps working against the new server.
+
+---
+
+# Second audit: why 0.2.0's output is still not useful (stat-5 → stat-5.1)
+
+Audited 2026-10-28, before any change, after reading ROUND_SIGNAL.md, RESEARCH.md, BACKTEST_RESULTS.md and RELEASE-0.2.0.md and re-reading the models, scoring, ledger, collector, contracts and panel. Data quality: [DATA_QUALITY.md](DATA_QUALITY.md). Direct tests and baseline comparison: [EVALUATION_RESULTS.md](EVALUATION_RESULTS.md).
+
+## Live compatibility (checked without credentials)
+
+`POST https://api.shoptrack.site/v1/history/backfill` answers **401**, not 404, and an unknown route answers 404. So the VPS serves the stat-5 backfill route: stat-5 is most likely deployed, from outside this repository (still no commits; the only VPS package in `dist/` is stat-2). I could not confirm the engine version, whether migration 0004 ran, or which extension version you have installed. Extension 0.2.0 is compatible with stat-5. 0.2.1 works with both stat-5 and stat-5.1 (section "Compatibility" in ROUND_SIGNAL.md).
+
+## Root causes
+
+| # | Cause | Kind | Evidence | What changed |
+|---|---|---|---|---|
+| 1 | **There is nothing to predict.** On every real series, once the data are cleaned, no serial dependence is detectable, and no learning model beats the baseline after multiple-testing correction except under a level shift that a fixed forecast exploits equally well | property of the game (provably fair) | EVALUATION_RESULTS.md summary; positive and negative controls behave as designed | Nothing can make the estimate *more predictive*. The baseline stays; no model was added. The panel now says what the estimate is (below) |
+| 2 | **"EXPERIMENTAL ESTIMATE" looked like a prediction.** The panel showed the model average with no comparison. On real data it moves away from the baseline without any validated reason: the largest range difference per forecast has a median of 0.7–3.7 percentage points per operator, a 90th percentile of 1.4–5.9 pp, and reaches 13–29 pp at times. Its overall log loss is the same as the baseline's, so these swings are noise that *looks* like a signal | presentation | replay of the four PHIMAS series (experimental-state forecasts); backtests: shown − baseline log loss ≈ 0.00002 except ODIBETS | Each range now shows the baseline as a tick and a "Δ pp" column, with a sentence "Practically the same as the baseline (largest difference x pp)" or "differs by up to x pp; not validated". The meaning text starts "A probability estimate, not a predictive advantage" |
+| 3 | **A lead over the running baseline was called "Better than baseline"** even when it came from a level shift, not dependence (ODIBETS: −0.0041, interval below 0, while the dependence tests were null and a fixed RTP forecast did better) | presentation / interpretation | EVALUATION_RESULTS.md, ODIBETS | Unless the state is VALIDATED SIGNAL, such a lead is shown as **"Ahead — not validated"** |
+| 4 | **Rounds could be lost without a trace.** A diff re-sync, a vanished list, an ambiguous change or a dropped queue batch left a hole. If the next upload arrived within 120 s, the server treated the rounds as consecutive, so forecasts could be scored against a round that was not the next one played. Conversely, a delayed upload (> 120 s) voided forecasts whose next round was verified | data quality | code audit (controller.ts, queue.ts, engine.ts `resolve`) | Collector continuity (`chain`, `index`), migration `0005` (3 nullable columns), break = continuity evidence first, time rule only for old clients |
+| 5 | **Warm-up counted any 20 stored rounds,** not 20 consecutive verified ones | rule | `issueWith` | The first estimate now needs a verified run of 20 (`longestRun`). `currentRun` / `longestRun` are in the response and in the panel |
+| 6 | **The last result and rolling performance were hidden** in the history list and Details | presentation | panel audit | "Last forecast … → actual … ✓/✗" and the last-50 hit rate / log loss vs baseline are on the main card |
+| 7 | **My own earlier analysis had an ordering bug** in the third-party loader (milliseconds instead of microseconds). That created spurious dependence and slightly wrong backtest figures | analysis error | DATA_QUALITY.md §5 | Fixed, with a test. BACKTEST_RESULTS.md regenerated, with a correction note |
+| 8 | **12 h retention** caps evidence at roughly 1,500–2,000 rounds per device per day. A real but small effect could never be validated within it | configuration (privacy decision) | positive controls: ±0.05 needs ≫ 3,000 rounds | Not changed: retention is your decision. Listed as the main remaining limit |
+
+## What was deliberately not done
+
+- **No new models.** The comparison shows the existing candidates already lose to the baseline out of sample. The streak and previous-round controls show no "due" effect. More models would only raise the multiple-testing bar and the chance of over-fitting.
+- **The baseline prior was not strengthened to the RTP reference**, although the fixed 0.97 ÷ m forecast scored slightly better on three series. The gain is ≤ 0.0006 log loss outside ODIBETS. It depends on the operator's RTP setting and Spribe's unpublished hash-to-multiplier mapping. Choosing it from these third-party files would be selecting on a sample that is not your game.
+- **Nothing was deployed, committed, migrated or installed.** Migration 0005 exists in the repository only.

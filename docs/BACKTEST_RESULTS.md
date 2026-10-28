@@ -1,22 +1,26 @@
-# Backtest results — engine stat-5 (`sequential_v1`)
+# Backtest results — engine stat-5.1 (`sequential_v1`)
 
-Generated 2026-10-28 with `npm run backtest:signal -w @aviator/backend`. Every forecast below was issued **before** its round and scored after it, by the same code the server runs (`replay()`). Nothing was tuned on these results: the models, priors, thresholds and rules were fixed before the real-data runs, and nothing was changed afterwards.
+Regenerated 2026-10-28 with `npm run backtest:signal -w @aviator/backend`. Every forecast below was issued **before** its round and scored after it, by the same code the server runs (`replay()`). Nothing was tuned on these results: the models, priors, thresholds and rules were fixed before the real-data runs, and nothing was changed afterwards. **No actual 1xBet data was available** ([DATA_QUALITY.md](DATA_QUALITY.md)).
+
+> **Correction (2026-10-28).** The first version of this file (stat-5) ordered the PHIMAS rows by millisecond timestamps. About 16% of rows were written microseconds apart in catch-up bursts, so those pairs kept the file's newest-first order, i.e. they were reversed. The loader now sorts by the full microsecond timestamp and starts a new run at every burst, because order and continuity inside a burst are not verified. The PHIMAS tables below are regenerated. The conclusion is unchanged: nothing validated. The MindingTheData series and the simulated controls were not affected (no timestamps; nothing changed for them).
+
+For the comparison with all requested baselines (empirical frequency, most-frequent range, fixed RTP reference), each model individually, the previous-round and streak controls, Holm correction, rolling windows and the direct dependence tests, see **[EVALUATION_RESULTS.md](EVALUATION_RESULTS.md)**.
 
 ## Summary
 
-| Data | Kind | Rounds used | Scored forecasts | Ever validated | Final state | Shown vs baseline log loss (95% CI) |
-|---|---|---|---|---|---|---|
-| BETGR8 (PHIMAS dataset) | real, external, provenance undocumented | 30,000 | 29,655 | **no** | baseline_only | +0.00002 [−0.00000, +0.00005] |
-| BETIKA (PHIMAS) | same | 30,000 | 29,326 | **no** | baseline_only | +0.00006 [−0.00003, +0.00015] |
-| ODIBETS (PHIMAS) | same; 44% of forecasts void (collection gaps) | 30,000 | 16,904 | **no** | experimental | −0.00131 [−0.00351, +0.00090] |
-| WINPESA (PHIMAS) | same | 28,315 | 24,875 | **no** | baseline_only | +0.00002 [−0.00005, +0.00010] |
-| MindingTheData `multipliers.csv` | real hash-chain crash game, **not Aviator** | 30,000 | 29,980 | **no** | baseline_only | +0.00001 [−0.00002, +0.00004] |
-| Independent simulated rounds | negative control | 340 histories (300–3,000 rounds) | — | **0 of 340** | — | — |
-| Planted dependence ±0.05 / ±0.10 / ±0.15 | positive control | 500–3,000 | — | 5% (±0.05, 3,000) · 50–100% (±0.10, 1,000–3,000) · 75–100% (±0.15, 500–1,500) | validated when detected | — |
+| Data | Kind | Rounds used | Scored forecasts (void) | Ever validated | Final state | Best candidate log10 e-value (needs ≥ 2) | Shown vs baseline log loss (95% CI) |
+|---|---|---|---|---|---|---|---|
+| BETGR8 (PHIMAS dataset) | real, third-party, provenance undocumented | 30,000 | 29,646 (334) | **no** | baseline_only | −15.33 | +0.00002 [−0.00000, +0.00005] |
+| BETIKA (PHIMAS) | same | 30,000 | 29,307 (673) | **no** | baseline_only | −13.32 | +0.00006 [−0.00003, +0.00015] |
+| ODIBETS (PHIMAS) | same; 45% of forecasts void (gaps and bursts) | 30,000 | 16,577 (13,403) | **no** | experimental | −13.72 | −0.00414 [−0.00578, −0.00249] |
+| WINPESA (PHIMAS) | same | 28,315 | 24,768 (3,527) | **no** | experimental | −13.72 | −0.00000 [−0.00008, +0.00008] |
+| MindingTheData `multipliers.csv` | real hash-chain crash game, **not Aviator** | 30,000 | 29,980 (0) | **no** | baseline_only | — | +0.00001 [−0.00002, +0.00004] |
+| Independent simulated rounds | negative control | 340 histories (300–3,000 rounds) | — | **0 of 340** | — | — | — |
+| Planted dependence ±0.05 / ±0.10 / ±0.15 | positive control | 500–3,000 | — | 5% (±0.05, 3,000) · 50–100% (±0.10, 1,000–3,000) · 75–100% (±0.15, 500–1,500) | validated when detected | — | — |
 
-**Answer to "does any model predict real rounds better than the baseline?" — No.** On ~148,000 real rounds no candidate came near validation. The best log10 e-values were −13 to −41, and the threshold is +2. After the first 100 scored forecasts, the forecast shown was the baseline 98–99.7% of the time in four of the five series. The top-range hit rate equals the baseline's (50.5–51.9%), as it must when the best guess is always "1.00×–1.99×".
+**Answer to "does any model predict real rounds better than the baseline?" — No validated advantage.** On ~148,000 real rounds no candidate came near validation: best log10 e-values −13 to −15 against a threshold of +2. The top-range hit rate equals the baseline's on every series (48.7–52.0%), as it must when every model's best guess is "1.00×–1.99×".
 
-ODIBETS is the one series where the change-point model ended slightly ahead of the baseline. The difference is small and its interval includes 0. The 2× calibration Z of 8.2 says the share of 2×+ rounds shifted over the period. With 13,076 forecasts voided by collection gaps, that more likely reflects how the file was collected than anything about the game. It was **not** validated.
+ODIBETS is the one series where the shown forecast (the model average, then weighted almost entirely on the previous-round model) ended ahead of the running baseline, with an interval below 0. The direct tests explain why. No serial dependence is detectable in ODIBETS (smallest BH-adjusted p 0.90), but its share of 2×+ rounds moved between 47.5% and 57.0% across the period, and the cumulative baseline lagged that level shift. A fixed 0.97 ÷ m forecast was even further ahead of the baseline (−0.0059). That is not round-to-round predictability, and the e-value test, which compares against the best constant distribution, did not validate it. The panel now labels such a lead **"Ahead — not validated"**, never "better".
 
 Datasets, provenance checks and why they are not your 1xBet data: [RESEARCH.md](RESEARCH.md) §2. The files are not committed (third-party data). To reproduce:
 
@@ -37,147 +41,147 @@ Invalid values skipped: 1. Exact duplicate rows removed: 5.
 
 ### aviator_payouts.csv · BETGR8
 
-30,000 rounds (timestamps from the file (collection times); exact duplicate rows removed; first 30,000 of 97,407 rounds used); 29,981 forecasts issued; 29,655 scored on unseen rounds, 325 voided (collection breaks). Run time 11.1 s.
+30,000 rounds (timestamps from the file (collection times); exact duplicate rows removed; rows written < 2 s after the previous one (catch-up bursts) start a new run, because their order and continuity are not verified; first 30,000 of 97,407 rounds used); 29,981 forecasts issued; 29,646 scored on unseen rounds, 334 voided (collection breaks). Run time 6.5 s.
 
 Final state: **baseline_only**. Forecast states over time: experimental 101, baseline_only 29,880. Ever validated: **no**.
 
 | Metric (shown forecast vs baseline, scored forecasts) | Shown | Baseline |
 |---|---|---|
-| Top-range hit rate | 51.6% | 51.6% |
-| Log loss (4 ranges) | 1.1506 | 1.1506 |
-| Multi-class Brier | 0.6301 | 0.6301 |
+| Top-range hit rate | 51.5% | 51.5% |
+| Log loss (4 ranges) | 1.1512 | 1.1512 |
+| Multi-class Brier | 0.6305 | 0.6305 |
 | Log-loss difference, 95% CI (negative = better) | 0.00002 [-0.00000, 0.00005] | |
 
 | Threshold | Events / non-events | Brier shown / baseline | Mean forecast | Observed rate | Calibration Z | Status |
 |---|---|---|---|---|---|---|
-| ≥ 2× | 14365 / 15290 | 0.2498 / 0.2498 | 48.5% | 48.4% | 0.74 | ok |
-| ≥ 5× | 5673 / 23982 | 0.1547 / 0.1547 | 19.2% | 19.1% | -0.30 | ok |
-| ≥ 10× | 2773 / 26882 | 0.0848 / 0.0848 | 9.4% | 9.4% | -0.47 | ok |
+| ≥ 2× | 14380 / 15266 | 0.2498 / 0.2498 | 48.5% | 48.5% | 0.94 | ok |
+| ≥ 5× | 5677 / 23969 | 0.1549 / 0.1549 | 19.2% | 19.1% | -0.21 | ok |
+| ≥ 10× | 2777 / 26869 | 0.0849 / 0.0849 | 9.4% | 9.4% | -0.38 | ok |
 
 | Model | Mean log loss | log10 e-value vs i.i.d. (needs ≥ 2.00) | Final weight | Validated |
 |---|---|---|---|---|
-| Baseline (all rounds, Bayesian) | 1.15062 | — | 1.000 | no |
-| Recent drift (EWMA) | 1.15652 | -81.42 | 0.000 | no |
-| Previous-round transition | 1.15136 | -14.92 | 0.000 | no |
-| Rounds since last 2× | 1.15153 | -17.19 | 0.000 | no |
-| Recent-round regression | 1.16951 | -248.75 | 0.000 | no |
-| Change-point detector | 1.15456 | -56.22 | 0.000 | no |
-| Model average | 1.15065 | — | — | no |
+| Baseline (all rounds, Bayesian) | 1.15121 | — | 1.000 | no |
+| Recent drift (EWMA) | 1.15716 | -82.13 | 0.000 | no |
+| Previous-round transition | 1.15197 | -15.33 | 0.000 | no |
+| Rounds since last 2× | 1.15213 | -17.35 | 0.000 | no |
+| Recent-round regression | 1.16990 | -246.15 | 0.000 | no |
+| Change-point detector | 1.15989 | -117.27 | 0.000 | no |
+| Model average | 1.15123 | — | — | no |
 
 | Period (quarter of scored forecasts) | n | Log-loss diff (shown − baseline) | Top-range hit shown / baseline |
 |---|---|---|---|
-| Q1 | 7413 | 0.00009 [-0.00001, 0.00019] | 51.2% / 51.2% |
-| Q2 | 7414 | 0.00000 [0.00000, 0.00000] | 51.3% / 51.3% |
-| Q3 | 7414 | 0.00000 [0.00000, 0.00000] | 52.2% / 52.2% |
-| Q4 | 7414 | 0.00000 [0.00000, 0.00000] | 51.6% / 51.6% |
+| Q1 | 7411 | 0.00009 [-0.00001, 0.00019] | 51.1% / 51.1% |
+| Q2 | 7412 | 0.00000 [0.00000, 0.00000] | 51.2% / 51.2% |
+| Q3 | 7411 | 0.00000 [0.00000, 0.00000] | 52.2% / 52.2% |
+| Q4 | 7412 | 0.00000 [0.00000, 0.00000] | 51.5% / 51.5% |
 
 ### aviator_payouts.csv · BETIKA
 
-30,000 rounds (timestamps from the file (collection times); exact duplicate rows removed; first 30,000 of 107,449 rounds used); 29,981 forecasts issued; 29,326 scored on unseen rounds, 654 voided (collection breaks). Run time 10.2 s.
+30,000 rounds (timestamps from the file (collection times); exact duplicate rows removed; rows written < 2 s after the previous one (catch-up bursts) start a new run, because their order and continuity are not verified; first 30,000 of 107,449 rounds used); 29,981 forecasts issued; 29,307 scored on unseen rounds, 673 voided (collection breaks). Run time 7.3 s.
 
 Final state: **baseline_only**. Forecast states over time: experimental 225, baseline_only 29,756. Ever validated: **no**.
 
 | Metric (shown forecast vs baseline, scored forecasts) | Shown | Baseline |
 |---|---|---|
-| Top-range hit rate | 51.9% | 51.9% |
-| Log loss (4 ranges) | 1.1463 | 1.1463 |
-| Multi-class Brier | 0.6278 | 0.6278 |
+| Top-range hit rate | 52.0% | 52.0% |
+| Log loss (4 ranges) | 1.1453 | 1.1452 |
+| Multi-class Brier | 0.6272 | 0.6272 |
 | Log-loss difference, 95% CI (negative = better) | 0.00006 [-0.00003, 0.00015] | |
 
 | Threshold | Events / non-events | Brier shown / baseline | Mean forecast | Observed rate | Calibration Z | Status |
 |---|---|---|---|---|---|---|
-| ≥ 2× | 14113 / 15213 | 0.2497 / 0.2497 | 48.2% | 48.1% | 0.85 | ok |
-| ≥ 5× | 5546 / 23780 | 0.1534 / 0.1534 | 18.8% | 18.9% | 0.72 | ok |
-| ≥ 10× | 2856 / 26470 | 0.0879 / 0.0879 | 9.6% | 9.7% | 0.94 | ok |
+| ≥ 2× | 14078 / 15229 | 0.2497 / 0.2497 | 48.2% | 48.0% | 0.50 | ok |
+| ≥ 5× | 5528 / 23779 | 0.1531 / 0.1531 | 18.8% | 18.9% | 0.50 | ok |
+| ≥ 10× | 2841 / 26466 | 0.0876 / 0.0876 | 9.6% | 9.7% | 0.68 | ok |
 
 | Model | Mean log loss | log10 e-value vs i.i.d. (needs ≥ 2.00) | Final weight | Validated |
 |---|---|---|---|---|
-| Baseline (all rounds, Bayesian) | 1.14628 | — | 1.000 | no |
-| Recent drift (EWMA) | 1.15230 | -81.45 | 0.000 | no |
-| Previous-round transition | 1.14697 | -13.54 | 0.000 | no |
-| Rounds since last 2× | 1.14718 | -16.19 | 0.000 | no |
-| Recent-round regression | 1.16763 | -276.69 | 0.000 | no |
-| Change-point detector | 1.15048 | -58.21 | 0.000 | no |
-| Model average | 1.14631 | — | — | no |
+| Baseline (all rounds, Bayesian) | 1.14522 | — | 1.000 | no |
+| Recent drift (EWMA) | 1.15124 | -81.28 | 0.000 | no |
+| Previous-round transition | 1.14590 | -13.32 | 0.000 | no |
+| Rounds since last 2× | 1.14613 | -16.19 | 0.000 | no |
+| Recent-round regression | 1.16578 | -266.33 | 0.000 | no |
+| Change-point detector | 1.15345 | -109.37 | 0.000 | no |
+| Model average | 1.14524 | — | — | no |
 
 | Period (quarter of scored forecasts) | n | Log-loss diff (shown − baseline) | Top-range hit shown / baseline |
 |---|---|---|---|
-| Q1 | 7331 | 0.00023 [-0.00014, 0.00059] | 51.9% / 51.9% |
-| Q2 | 7332 | 0.00000 [0.00000, 0.00000] | 52.3% / 52.3% |
-| Q3 | 7331 | 0.00000 [0.00000, 0.00000] | 51.9% / 51.9% |
-| Q4 | 7332 | 0.00000 [0.00000, 0.00000] | 51.4% / 51.4% |
+| Q1 | 7326 | 0.00023 [-0.00014, 0.00059] | 51.8% / 51.8% |
+| Q2 | 7327 | 0.00000 [0.00000, 0.00000] | 52.4% / 52.4% |
+| Q3 | 7327 | 0.00000 [0.00000, 0.00000] | 51.8% / 51.8% |
+| Q4 | 7327 | 0.00000 [0.00000, 0.00000] | 51.8% / 51.8% |
 
 ### aviator_payouts.csv · ODIBETS
 
-30,000 rounds (timestamps from the file (collection times); exact duplicate rows removed; first 30,000 of 66,823 rounds used); 29,981 forecasts issued; 16,904 scored on unseen rounds, 13076 voided (collection breaks). Run time 10.1 s.
+30,000 rounds (timestamps from the file (collection times); exact duplicate rows removed; rows written < 2 s after the previous one (catch-up bursts) start a new run, because their order and continuity are not verified; first 30,000 of 66,823 rounds used); 29,981 forecasts issued; 16,577 scored on unseen rounds, 13403 voided (collection breaks). Run time 5.2 s.
 
-Final state: **experimental**. Forecast states over time: experimental 26,338, baseline_only 3,643. Ever validated: **no**.
+Final state: **experimental**. Forecast states over time: experimental 20,900, baseline_only 9,081. Ever validated: **no**.
 
 | Metric (shown forecast vs baseline, scored forecasts) | Shown | Baseline |
 |---|---|---|
-| Top-range hit rate | 50.5% | 50.5% |
-| Log loss (4 ranges) | 1.1730 | 1.1743 |
-| Multi-class Brier | 0.6410 | 0.6424 |
-| Log-loss difference, 95% CI (negative = better) | -0.00131 [-0.00351, 0.00090] | |
+| Top-range hit rate | 50.2% | 50.2% |
+| Log loss (4 ranges) | 1.1724 | 1.1765 |
+| Multi-class Brier | 0.6413 | 0.6438 |
+| Log-loss difference, 95% CI (negative = better) | -0.00414 [-0.00578, -0.00249] | |
 
 | Threshold | Events / non-events | Brier shown / baseline | Mean forecast | Observed rate | Calibration Z | Status |
 |---|---|---|---|---|---|---|
-| ≥ 2× | 8366 / 8538 | 0.2510 / 0.2526 | 49.9% | 49.5% | 8.21 | ok |
-| ≥ 5× | 3406 / 13498 | 0.1614 / 0.1619 | 20.3% | 20.1% | 0.16 | ok |
-| ≥ 10× | 1722 / 15182 | 0.0918 / 0.0923 | 10.4% | 10.2% | -0.47 | ok |
+| ≥ 2× | 8252 / 8325 | 0.2505 / 0.2524 | 50.4% | 49.8% | 5.80 | ok |
+| ≥ 5× | 3363 / 13214 | 0.1620 / 0.1627 | 20.6% | 20.3% | -0.90 | ok |
+| ≥ 10× | 1708 / 14869 | 0.0925 / 0.0932 | 10.6% | 10.3% | -0.99 | ok |
 
 | Model | Mean log loss | log10 e-value vs i.i.d. (needs ≥ 2.00) | Final weight | Validated |
 |---|---|---|---|---|
-| Baseline (all rounds, Bayesian) | 1.17428 | — | 0.000 | no |
-| Recent drift (EWMA) | 1.17435 | -52.43 | 0.000 | no |
-| Previous-round transition | 1.18088 | -100.38 | 0.000 | no |
-| Rounds since last 2× | 1.17579 | -63.04 | 0.000 | no |
-| Recent-round regression | 1.19288 | -188.52 | 0.000 | no |
-| Change-point detector | 1.17278 | -40.95 | 1.000 | no |
-| Model average | 1.17292 | — | — | no |
+| Baseline (all rounds, Bayesian) | 1.17655 | — | 0.000 | no |
+| Recent drift (EWMA) | 1.17771 | -53.90 | 0.000 | no |
+| Previous-round transition | 1.17212 | -13.72 | 0.995 | no |
+| Rounds since last 2× | 1.17245 | -16.06 | 0.005 | no |
+| Recent-round regression | 1.19294 | -163.57 | 0.000 | no |
+| Change-point detector | 1.18089 | -76.80 | 0.000 | no |
+| Model average | 1.17226 | — | — | no |
 
 | Period (quarter of scored forecasts) | n | Log-loss diff (shown − baseline) | Top-range hit shown / baseline |
 |---|---|---|---|
-| Q1 | 4226 | -0.00611 [-0.01103, -0.00119] | 50.0% / 50.1% |
-| Q2 | 4226 | 0.00020 [-0.00456, 0.00496] | 50.1% / 50.2% |
-| Q3 | 4226 | -0.00062 [-0.00480, 0.00356] | 50.8% / 50.8% |
-| Q4 | 4226 | 0.00130 [-0.00236, 0.00496] | 50.9% / 50.9% |
+| Q1 | 4144 | -0.00476 [-0.00936, -0.00016] | 49.5% / 49.5% |
+| Q2 | 4144 | -0.00627 [-0.00951, -0.00303] | 50.2% / 50.2% |
+| Q3 | 4144 | -0.00350 [-0.00615, -0.00086] | 50.7% / 50.7% |
+| Q4 | 4145 | -0.00201 [-0.00414, 0.00013] | 50.5% / 50.5% |
 
 ### aviator_payouts.csv · WINPESA
 
-28,315 rounds (timestamps from the file (collection times); exact duplicate rows removed); 28,296 forecasts issued; 24,875 scored on unseen rounds, 3420 voided (collection breaks). Run time 10.1 s.
+28,315 rounds (timestamps from the file (collection times); exact duplicate rows removed; rows written < 2 s after the previous one (catch-up bursts) start a new run, because their order and continuity are not verified); 28,296 forecasts issued; 24,768 scored on unseen rounds, 3527 voided (collection breaks). Run time 7.3 s.
 
-Final state: **baseline_only**. Forecast states over time: experimental 564, baseline_only 27,732. Ever validated: **no**.
+Final state: **experimental**. Forecast states over time: experimental 1,187, baseline_only 27,109. Ever validated: **no**.
 
 | Metric (shown forecast vs baseline, scored forecasts) | Shown | Baseline |
 |---|---|---|
-| Top-range hit rate | 51.1% | 51.1% |
-| Log loss (4 ranges) | 1.1551 | 1.1551 |
-| Multi-class Brier | 0.6329 | 0.6329 |
-| Log-loss difference, 95% CI (negative = better) | 0.00002 [-0.00005, 0.00010] | |
+| Top-range hit rate | 48.7% | 48.7% |
+| Log loss (4 ranges) | 1.1853 | 1.1853 |
+| Multi-class Brier | 0.6491 | 0.6492 |
+| Log-loss difference, 95% CI (negative = better) | -0.00000 [-0.00008, 0.00008] | |
 
 | Threshold | Events / non-events | Brier shown / baseline | Mean forecast | Observed rate | Calibration Z | Status |
 |---|---|---|---|---|---|---|
-| ≥ 2× | 12171 / 12704 | 0.2500 / 0.2500 | 49.1% | 48.9% | 1.27 | ok |
-| ≥ 5× | 4797 / 20078 | 0.1557 / 0.1557 | 19.7% | 19.3% | -1.47 | ok |
-| ≥ 10× | 2380 / 22495 | 0.0865 / 0.0865 | 9.9% | 9.6% | -1.68 | ok |
+| ≥ 2× | 12701 / 12067 | 0.2504 / 0.2504 | 49.2% | 51.3% | 7.29 | ok |
+| ≥ 5× | 5166 / 19602 | 0.1653 / 0.1653 | 19.7% | 20.9% | 4.69 | ok |
+| ≥ 10× | 2590 / 22178 | 0.0937 / 0.0937 | 9.9% | 10.5% | 2.95 | ok |
 
 | Model | Mean log loss | log10 e-value vs i.i.d. (needs ≥ 2.00) | Final weight | Validated |
 |---|---|---|---|---|
-| Baseline (all rounds, Bayesian) | 1.15510 | — | 1.000 | no |
-| Recent drift (EWMA) | 1.16146 | -73.29 | 0.000 | no |
-| Previous-round transition | 1.15589 | -13.05 | 0.000 | no |
-| Rounds since last 2× | 1.15611 | -15.50 | 0.000 | no |
-| Recent-round regression | 1.17280 | -195.81 | 0.000 | no |
-| Change-point detector | 1.15892 | -45.88 | 0.000 | no |
-| Model average | 1.15513 | — | — | no |
+| Baseline (all rounds, Bayesian) | 1.18525 | — | 0.212 | no |
+| Recent drift (EWMA) | 1.19269 | -94.93 | 0.000 | no |
+| Previous-round transition | 1.18514 | -13.72 | 0.729 | no |
+| Rounds since last 2× | 1.18524 | -14.81 | 0.059 | no |
+| Recent-round regression | 1.20277 | -203.36 | 0.000 | no |
+| Change-point detector | 1.19557 | -125.96 | 0.000 | no |
+| Model average | 1.18522 | — | — | no |
 
 | Period (quarter of scored forecasts) | n | Log-loss diff (shown − baseline) | Top-range hit shown / baseline |
 |---|---|---|---|
-| Q1 | 6218 | 0.00008 [-0.00021, 0.00038] | 51.1% / 51.1% |
-| Q2 | 6219 | 0.00000 [0.00000, 0.00000] | 51.2% / 51.2% |
-| Q3 | 6219 | 0.00000 [0.00000, 0.00000] | 51.1% / 51.1% |
-| Q4 | 6219 | 0.00000 [0.00000, 0.00000] | 50.8% / 50.8% |
+| Q1 | 6192 | 0.00008 [-0.00007, 0.00023] | 48.9% / 48.9% |
+| Q2 | 6192 | 0.00000 [0.00000, 0.00000] | 48.5% / 48.5% |
+| Q3 | 6192 | 0.00000 [0.00000, 0.00000] | 49.5% / 49.5% |
+| Q4 | 6192 | -0.00008 [-0.00036, 0.00020] | 48.0% / 48.0% |
 
 ## Controls (SIMULATED rounds — not real game data)
 
