@@ -323,6 +323,41 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
                 }>>;
                 bestLog10EValue: z.ZodNullable<z.ZodNumber>;
             }, z.core.$strip>;
+            strategy: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+                method: z.ZodLiteral<"range_state_machine_v1">;
+                config: z.ZodObject<{
+                    targetThreshold: z.ZodNumber;
+                    lowEntryCount: z.ZodNumber;
+                    watchRange: z.ZodNumber;
+                    maxWatchForecasts: z.ZodNullable<z.ZodNumber>;
+                    minConditionalSample: z.ZodNumber;
+                    priorStrength: z.ZodNumber;
+                }, z.core.$strip>;
+                state: z.ZodEnum<{
+                    low_range_tracking: "low_range_tracking";
+                    elevated_range_watch: "elevated_range_watch";
+                }>;
+                consecutiveLow: z.ZodNumber;
+                watchForecast: z.ZodNumber;
+                watchLapsed: z.ZodBoolean;
+                targetThreshold: z.ZodNumber;
+                predictedRange: z.ZodNumber;
+                probabilities: z.ZodArray<z.ZodNumber>;
+                targetProbability: z.ZodNumber;
+                basis: z.ZodEnum<{
+                    baseline: "baseline";
+                    conditional: "conditional";
+                }>;
+                label: z.ZodEnum<{
+                    baseline: "baseline";
+                    experimental: "experimental";
+                }>;
+                conditionalSample: z.ZodNumber;
+                conditionalTargetHits: z.ZodNumber;
+                differenceZ: z.ZodNullable<z.ZodNumber>;
+                multiplierEstimate: z.ZodNull;
+                multiplierEstimateReason: z.ZodString;
+            }, z.core.$strip>>>;
             outcome: z.ZodDiscriminatedUnion<[z.ZodObject<{
                 status: z.ZodLiteral<"pending">;
             }, z.core.$strip>, z.ZodObject<{
@@ -335,6 +370,8 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
                 logLoss: z.ZodNumber;
                 baselineLogLoss: z.ZodNumber;
                 brier: z.ZodNumber;
+                targetHit: z.ZodOptional<z.ZodBoolean>;
+                strategyRangeHit: z.ZodOptional<z.ZodBoolean>;
             }, z.core.$strip>, z.ZodObject<{
                 status: z.ZodLiteral<"void">;
                 reason: z.ZodEnum<{
@@ -455,6 +492,41 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
                 }>>;
                 bestLog10EValue: z.ZodNullable<z.ZodNumber>;
             }, z.core.$strip>;
+            strategy: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+                method: z.ZodLiteral<"range_state_machine_v1">;
+                config: z.ZodObject<{
+                    targetThreshold: z.ZodNumber;
+                    lowEntryCount: z.ZodNumber;
+                    watchRange: z.ZodNumber;
+                    maxWatchForecasts: z.ZodNullable<z.ZodNumber>;
+                    minConditionalSample: z.ZodNumber;
+                    priorStrength: z.ZodNumber;
+                }, z.core.$strip>;
+                state: z.ZodEnum<{
+                    low_range_tracking: "low_range_tracking";
+                    elevated_range_watch: "elevated_range_watch";
+                }>;
+                consecutiveLow: z.ZodNumber;
+                watchForecast: z.ZodNumber;
+                watchLapsed: z.ZodBoolean;
+                targetThreshold: z.ZodNumber;
+                predictedRange: z.ZodNumber;
+                probabilities: z.ZodArray<z.ZodNumber>;
+                targetProbability: z.ZodNumber;
+                basis: z.ZodEnum<{
+                    baseline: "baseline";
+                    conditional: "conditional";
+                }>;
+                label: z.ZodEnum<{
+                    baseline: "baseline";
+                    experimental: "experimental";
+                }>;
+                conditionalSample: z.ZodNumber;
+                conditionalTargetHits: z.ZodNumber;
+                differenceZ: z.ZodNullable<z.ZodNumber>;
+                multiplierEstimate: z.ZodNull;
+                multiplierEstimateReason: z.ZodString;
+            }, z.core.$strip>>>;
             outcome: z.ZodDiscriminatedUnion<[z.ZodObject<{
                 status: z.ZodLiteral<"pending">;
             }, z.core.$strip>, z.ZodObject<{
@@ -467,6 +539,8 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
                 logLoss: z.ZodNumber;
                 baselineLogLoss: z.ZodNumber;
                 brier: z.ZodNumber;
+                targetHit: z.ZodOptional<z.ZodBoolean>;
+                strategyRangeHit: z.ZodOptional<z.ZodBoolean>;
             }, z.core.$strip>, z.ZodObject<{
                 status: z.ZodLiteral<"void">;
                 reason: z.ZodEnum<{
@@ -486,6 +560,50 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
             minEvents: z.ZodNumber;
             gapSeconds: z.ZodNumber;
         }, z.core.$strip>;
+        strategyPerformance: z.ZodOptional<z.ZodObject<{
+            eligible: z.ZodNumber;
+            target: z.ZodObject<{
+                n: z.ZodNumber;
+                hits: z.ZodNumber;
+                rate: z.ZodNullable<z.ZodNumber>;
+                low: z.ZodNullable<z.ZodNumber>;
+                high: z.ZodNullable<z.ZodNumber>;
+            }, z.core.$strip>;
+            rangeHits: z.ZodNumber;
+            baselineRangeHits: z.ZodNumber;
+            targetBrier: z.ZodNullable<z.ZodNumber>;
+            baselineTargetBrier: z.ZodNullable<z.ZodNumber>;
+            targetLogLoss: z.ZodNullable<z.ZodNumber>;
+            baselineTargetLogLoss: z.ZodNullable<z.ZodNumber>;
+            targetLogLossDiff: z.ZodNullable<z.ZodNumber>;
+            targetLogLossDiffLow: z.ZodNullable<z.ZodNumber>;
+            targetLogLossDiffHigh: z.ZodNullable<z.ZodNumber>;
+            rangeLogLoss: z.ZodNullable<z.ZodNumber>;
+            baselineRangeLogLoss: z.ZodNullable<z.ZodNumber>;
+            rangeBrier: z.ZodNullable<z.ZodNumber>;
+            baselineRangeBrier: z.ZodNullable<z.ZodNumber>;
+            byRunLength: z.ZodArray<z.ZodObject<{
+                bucket: z.ZodEnum<{
+                    "0-1": "0-1";
+                    "2-4": "2-4";
+                    "5-7": "5-7";
+                    "8+": "8+";
+                }>;
+                target: z.ZodObject<{
+                    n: z.ZodNumber;
+                    hits: z.ZodNumber;
+                    rate: z.ZodNullable<z.ZodNumber>;
+                    low: z.ZodNullable<z.ZodNumber>;
+                    high: z.ZodNullable<z.ZodNumber>;
+                }, z.core.$strip>;
+                rangeHits: z.ZodNumber;
+                baselineRangeHits: z.ZodNumber;
+                meanTargetProbability: z.ZodNullable<z.ZodNumber>;
+                meanBaselineTargetProbability: z.ZodNullable<z.ZodNumber>;
+                targetBrier: z.ZodNullable<z.ZodNumber>;
+                baselineTargetBrier: z.ZodNullable<z.ZodNumber>;
+            }, z.core.$strip>>;
+        }, z.core.$strip>>;
     }, z.core.$strip>>;
     notice: z.ZodString;
 }, z.core.$strip>;

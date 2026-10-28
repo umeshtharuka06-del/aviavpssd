@@ -72,6 +72,114 @@ export type SignalState = z.infer<typeof SignalStateSchema>;
 const Prob = z.number().min(0).max(1);
 export const RangeProbabilitiesSchema = z.array(Prob).length(RANGE_COUNT);
 
+/* ---------- Range state machine (stat-5.4+): an EXPERIMENTAL heuristic, not a validated signal ---------- */
+
+/**
+ * low_range_tracking     fewer than `lowEntryCount` consecutive rounds below the target: the baseline
+ *                        distribution, its most likely range as the predicted range
+ * elevated_range_watch   at least `lowEntryCount` consecutive rounds below the target (in one verified
+ *                        run): the predicted range is `watchRange` and stays so after every miss, until
+ *                        a round reaches the target, a collection break, or `maxWatchForecasts` forecasts
+ * A run of low rounds does NOT make a high round due; the watch only selects which estimate is shown.
+ */
+export const STRATEGY_STATES = ['low_range_tracking', 'elevated_range_watch'] as const;
+export const StrategyStateSchema = z.enum(STRATEGY_STATES);
+export type StrategyState = z.infer<typeof StrategyStateSchema>;
+
+export const RangeStrategyConfigSchema = z.object({
+  /** Target threshold: a round with multiplier ≥ this (whole cents) is a TARGET HIT; below it is "low". */
+  targetThreshold: z.number().positive(),
+  /** Consecutive low rounds that enter the watch. */
+  lowEntryCount: z.number().int().positive(),
+  /** Range index the watch predicts. */
+  watchRange: z.number().int().min(0).max(RANGE_COUNT - 1),
+  /** Persistence rule: forecasts per watch before it lapses back to tracking; null = until a hit or a break. */
+  maxWatchForecasts: z.number().int().positive().nullable(),
+  /** Past watch outcomes needed before the watch uses its own (conditional) estimate instead of the baseline. */
+  minConditionalSample: z.number().int().positive(),
+  /** Pseudo-rounds of the baseline mixed into the conditional estimate. */
+  priorStrength: z.number().positive(),
+});
+export type RangeStrategyConfig = z.infer<typeof RangeStrategyConfigSchema>;
+
+/** Fixed before any evaluation (the user's specification); not tuned on data. */
+export const RANGE_STRATEGY_CONFIG: RangeStrategyConfig = Object.freeze({
+  targetThreshold: 2,
+  lowEntryCount: 5,
+  watchRange: 1,
+  maxWatchForecasts: null,
+  minConditionalSample: 30,
+  priorStrength: 20,
+});
+
+export const RangeStrategyForecastSchema = z.object({
+  method: z.literal('range_state_machine_v1'),
+  config: RangeStrategyConfigSchema,
+  state: StrategyStateSchema,
+  /** Consecutive rounds below the target ending at the input boundary (counted within one verified run). */
+  consecutiveLow: z.number().int().nonnegative(),
+  /** 1-based position of this forecast within the current watch; 0 while tracking. */
+  watchForecast: z.number().int().nonnegative(),
+  /** The low run is long enough for the watch, but the persistence rule (maxWatchForecasts) has lapsed. */
+  watchLapsed: z.boolean(),
+  targetThreshold: z.number().positive(),
+  /** Range this forecast is scored against for RANGE HIT/MISS. */
+  predictedRange: z.number().int().min(0).max(RANGE_COUNT - 1),
+  probabilities: RangeProbabilitiesSchema,
+  /** P(multiplier ≥ targetThreshold) under `probabilities`. */
+  targetProbability: Prob,
+  /** baseline: the baseline distribution is shown as is; conditional: past watch outcomes mixed with the baseline. */
+  basis: z.enum(['baseline', 'conditional']),
+  label: z.enum(['baseline', 'experimental']),
+  /** Earlier rounds (input rounds only) that were played during a watch, and how many reached the target. */
+  conditionalSample: z.number().int().nonnegative(),
+  conditionalTargetHits: z.number().int().nonnegative(),
+  /** z of the conditional target rate against the baseline's P(≥ target); one uncorrected look, not a validation. */
+  differenceZ: z.number().nullable(),
+  /** No model forecasts a position inside a range, so no exact multiplier is defined: always null here. */
+  multiplierEstimate: z.null(),
+  multiplierEstimateReason: z.string().max(200),
+});
+export type RangeStrategyForecast = z.infer<typeof RangeStrategyForecastSchema>;
+
+const RateSchema = z.object({ n: z.number().int().nonnegative(), hits: z.number().int().nonnegative(), rate: Prob.nullable(), low: Prob.nullable(), high: Prob.nullable() });
+export const StrategyBucketSchema = z.object({
+  /** Consecutive low rounds before the forecast round: "0-1", "2-4", "5-7", "8+". */
+  bucket: z.enum(['0-1', '2-4', '5-7', '8+']),
+  target: RateSchema,
+  rangeHits: z.number().int().nonnegative(),
+  baselineRangeHits: z.number().int().nonnegative(),
+  meanTargetProbability: Prob.nullable(),
+  meanBaselineTargetProbability: Prob.nullable(),
+  targetBrier: z.number().min(0).max(1).nullable(),
+  baselineTargetBrier: z.number().min(0).max(1).nullable(),
+});
+export const StrategyPerformanceSchema = z.object({
+  /** Scored forecasts that carry a strategy record. */
+  eligible: z.number().int().nonnegative(),
+  /** TARGET HIT rate (actual ≥ threshold) with a 95% Wilson interval. Same rounds for the baseline. */
+  target: RateSchema,
+  /** RANGE HIT: actual inside the strategy's predicted range; baseline = inside the baseline's most likely range. */
+  rangeHits: z.number().int().nonnegative(),
+  baselineRangeHits: z.number().int().nonnegative(),
+  /** Target event (≥ threshold): strategy probability vs the baseline's, lower is better. */
+  targetBrier: z.number().min(0).max(1).nullable(),
+  baselineTargetBrier: z.number().min(0).max(1).nullable(),
+  targetLogLoss: z.number().nonnegative().nullable(),
+  baselineTargetLogLoss: z.number().nonnegative().nullable(),
+  /** Mean paired (strategy − baseline) target log loss with a 95% interval; negative = better. */
+  targetLogLossDiff: z.number().nullable(),
+  targetLogLossDiffLow: z.number().nullable(),
+  targetLogLossDiffHigh: z.number().nullable(),
+  /** Four-range scores of the strategy probabilities vs the baseline vector. */
+  rangeLogLoss: z.number().nonnegative().nullable(),
+  baselineRangeLogLoss: z.number().nonnegative().nullable(),
+  rangeBrier: z.number().min(0).max(2).nullable(),
+  baselineRangeBrier: z.number().min(0).max(2).nullable(),
+  byRunLength: z.array(StrategyBucketSchema),
+});
+export type StrategyPerformance = z.infer<typeof StrategyPerformanceSchema>;
+
 export const ForecastOutcomeSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('pending') }),
   z.object({
@@ -88,6 +196,10 @@ export const ForecastOutcomeSchema = z.discriminatedUnion('status', [
     baselineLogLoss: z.number().nonnegative(),
     /** Σ_k (p_k − 1[k = actual])², in [0, 2]. */
     brier: z.number().min(0).max(2),
+    /** stat-5.4+, forecasts with a strategy record: actual ≥ strategy.targetThreshold (numeric, whole cents). */
+    targetHit: z.boolean().optional(),
+    /** stat-5.4+: actual inside strategy.predictedRange. Separate from targetHit (5.00× after 2.00×–4.99×: range miss, target hit). */
+    strategyRangeHit: z.boolean().optional(),
   }),
   z.object({
     status: z.literal('void'),
@@ -124,6 +236,8 @@ export const ForecastRecordSchema = z.object({
   probabilities: RangeProbabilitiesSchema,
   baselineProbabilities: RangeProbabilitiesSchema,
   atIssue: IssueEvidenceSchema,
+  /** Range state machine at issue time (stat-5.4+; absent or null for older forecasts). */
+  strategy: RangeStrategyForecastSchema.nullable().optional(),
   outcome: ForecastOutcomeSchema,
 });
 export type ForecastRecord = z.infer<typeof ForecastRecordSchema>;
@@ -266,6 +380,8 @@ export const NextRoundSignalSchema = z.object({
   /** Most recent forecasts, newest first (at most 30). */
   history: z.array(ForecastRecordSchema).max(30),
   rules: SignalRulesSchema,
+  /** Walk-forward record of the range state machine over this device's scored forecasts (stat-5.4+). */
+  strategyPerformance: StrategyPerformanceSchema.optional(),
 });
 export type NextRoundSignal = z.infer<typeof NextRoundSignalSchema>;
 
