@@ -1,4 +1,5 @@
 import { HISTORY_RETENTION_HOURS, type BackfillRequest, type BackfillResponse, type Continuity } from '@aviator/contracts';
+import { errorFacts } from '../diagnostics.js';
 import { AppError } from '../api/errors.js';
 import type { CustomerAuth } from '../auth/customer-session.js';
 import { isSiteAccepted } from '../config/env.js';
@@ -126,6 +127,6 @@ export async function syncLedgerSafely(ctx: AppContext, device: number, siteId: 
   try {
     await syncLedger(ctx.pool, device, siteId);
   } catch (err) {
-    console.error(JSON.stringify({ level: 'error', msg: 'forecast ledger sync failed', code: (err as { code?: string }).code ?? 'unknown' }));
+    console.error(JSON.stringify({ level: 'error', msg: 'forecast ledger sync failed', siteId, err: errorFacts(err) }));
   }
 }

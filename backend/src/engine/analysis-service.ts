@@ -2,6 +2,7 @@ import { HISTORY_RETENTION_HOURS, type AnalysisResponse } from '@aviator/contrac
 import { AppError } from '../api/errors.js';
 import { isSiteAccepted } from '../config/env.js';
 import type { AppContext } from '../context.js';
+import { FAILURE_MESSAGE, failureCause } from '../diagnostics.js';
 import { currentSignal } from './sequential/ledger-service.js';
 
 const MAX_OBSERVATIONS_FOR_ANALYSIS = 5_000;
@@ -38,8 +39,8 @@ export async function runAnalysis(ctx: AppContext, siteId: string, deviceActivat
       }),
       PROVIDER_TIMEOUT_MS,
     );
-  } catch {
-    throw new AppError('ANALYSIS_UNAVAILABLE', 'Analysis is temporarily unavailable.');
+  } catch (err) {
+    throw unavailable('statistics', err);
   }
   // Round-by-round signal: scores any open forecast and records the next one before answering, so
   // the response always carries the forecast for the round after the latest stored round. Only the
@@ -48,8 +49,8 @@ export async function runAnalysis(ctx: AppContext, siteId: string, deviceActivat
   if (provider.supportsSignal) {
     try {
       nextRound = await withTimeout(currentSignal(ctx.pool, deviceActivationId, siteId), PROVIDER_TIMEOUT_MS);
-    } catch {
-      throw new AppError('ANALYSIS_UNAVAILABLE', 'Analysis is temporarily unavailable.');
+    } catch (err) {
+      throw unavailable('next_round_forecast', err);
     }
   }
   return {
@@ -66,6 +67,16 @@ export async function runAnalysis(ctx: AppContext, siteId: string, deviceActivat
     ...(nextRound ? { nextRound } : {}),
     notice: output.notice,
   };
+}
+
+/**
+ * 503 with the step that failed and a safe cause category (details.stage / details.cause), so the
+ * panel can say exactly why there is no estimate. The raw error goes to the server log only.
+ */
+function unavailable(stage: 'statistics' | 'next_round_forecast', err: unknown): AppError {
+  const cause = failureCause(err);
+  const message = cause === 'internal' ? 'Analysis is temporarily unavailable.' : FAILURE_MESSAGE[cause];
+  return new AppError('ANALYSIS_UNAVAILABLE', message, { stage, cause }, err);
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {

@@ -38,8 +38,8 @@ import { createModelSet, type ModelSet } from './models.js';
  *   otherwise                                                   → experimental (ensemble forecast)
  */
 
-/** Engine version recorded with every forecast (stat-5.1: continuity evidence, verified-run warm-up). */
-export const ENGINE_VERSION = 'stat-5.1';
+/** Engine version recorded with every forecast (stat-5.1: continuity, verified-run warm-up; stat-5.2: rolling Brier, failure causes). */
+export const ENGINE_VERSION = 'stat-5.2';
 
 export const SIGNAL_RULES: SignalRules = Object.freeze({
   warmupRounds: SIGNAL_WARMUP_ROUNDS,
@@ -428,7 +428,16 @@ export function performanceOf(entries: readonly LedgerEntry[], rules = SIGNAL_RU
     logLossDiffHigh: hi,
     brier: mean(scored.map((x) => brier(x.p, x.y))),
     baselineBrier: mean(scored.map((x) => brier(x.b, x.y))),
-    rolling: { window: ROLLING_WINDOW, n: recent.length, topRangeHitRate: hit(recent, 'p'), logLoss: ll(recent, 'p'), baselineLogLoss: ll(recent, 'b') },
+    rolling: {
+      window: ROLLING_WINDOW,
+      n: recent.length,
+      topRangeHitRate: hit(recent, 'p'),
+      baselineTopRangeHitRate: hit(recent, 'b'),
+      logLoss: ll(recent, 'p'),
+      baselineLogLoss: ll(recent, 'b'),
+      brier: mean(recent.map((x) => brier(x.p, x.y))),
+      baselineBrier: mean(recent.map((x) => brier(x.b, x.y))),
+    },
     thresholds,
   };
 }

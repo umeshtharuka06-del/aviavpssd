@@ -18,7 +18,7 @@ export interface StatisticalProviderOptions {
 
 export class StatisticalAnalysisProvider implements AnalysisProvider {
   readonly kind = 'live' as const;
-  readonly version = 'stat-5.1';
+  readonly version = 'stat-5.2';
   readonly isTestData = false;
   readonly supportsSignal = true;
   private readonly minSampleSize: number;

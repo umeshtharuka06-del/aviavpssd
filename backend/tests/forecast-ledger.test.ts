@@ -85,6 +85,29 @@ describe('forecast ledger (PostgreSQL)', () => {
     expect(s.current!.inputRounds).toBe(23);
   });
 
+  it('every scored forecast is scored against the round stored right after its input round, and saw nothing after it', async () => {
+    // a mixed stream: single rounds, multi-round batches and analysis requests in between
+    await ingest(seq(20));
+    for (const [i, batch] of [[3.1], [1.01, 9.99], [2.0], [10.0, 1.5, 4.99], [5.0], [1.99]].entries()) {
+      await ingest(batch);
+      if (i % 2) await signal();
+    }
+    const { rows: ids } = await h.pool.query<{ id: string }>('SELECT o.id::text AS id FROM game_observations o ORDER BY o.id');
+    const next = new Map(ids.map((r, i) => [r.id, ids[i + 1]?.id]));
+    const { rows } = await h.pool.query<{ input: string; inputs: number; target: string | null; status: string; m: string }>(
+      `SELECT f.input_last_observation_id::text AS input, f.input_round_count AS inputs, o.target_observation_id::text AS target, o.status, o.actual_multiplier AS m
+         FROM round_forecasts f JOIN forecast_outcomes o ON o.forecast_id = f.id ORDER BY f.id`,
+    );
+    expect(rows.length).toBe(6); // one per upload after the warm-up
+    for (const r of rows) {
+      expect(r.status).toBe('scored');
+      expect(r.target).toBe(next.get(r.input)); // the very next stored round, never a later one
+      // the forecast was built from exactly the rounds up to and including its input round
+      expect(r.inputs).toBe(ids.findIndex((x) => x.id === r.input) + 1);
+    }
+    expect(rows.map((r) => Number(r.m))).toEqual([3.1, 1.01, 2.0, 10.0, 5.0, 1.99]); // first round of each batch
+  });
+
   it('issues at upload time, so a forecast exists even if the panel never asked', async () => {
     await ingest(seq(20));
     expect(await count('round_forecasts')).toBe(1);

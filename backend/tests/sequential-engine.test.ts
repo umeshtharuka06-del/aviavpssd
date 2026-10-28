@@ -10,6 +10,7 @@ import {
   replay,
   resolve,
   SIGNAL_RULES,
+  topRange,
   type LedgerRound,
 } from '../src/engine/sequential/engine.js';
 import { createModelSet, RTP_REFERENCE } from '../src/engine/sequential/models.js';
@@ -101,6 +102,15 @@ describe('round-by-round replay (the live process)', () => {
     expect(s.history[0]!.id).toBe(s.current!.id);
     const t2 = s.performance.thresholds[0]!;
     expect(t2.events + t2.nonEvents).toBe(s.performance.scored);
+    // rolling window: the last 50 scored, model and baseline Brier and hit rate on the same rounds
+    const scored = r.entries.filter((e) => e.outcome?.status === 'scored').slice(-50);
+    const y = (e: (typeof scored)[number]) => (e.outcome as { range: number }).range;
+    const br = (p: readonly number[], k: number) => p.reduce((a, v, j) => a + (v - (j === k ? 1 : 0)) ** 2, 0);
+    const mean = (v: number[]) => v.reduce((a, x) => a + x, 0) / v.length;
+    expect(s.performance.rolling.n).toBe(scored.length);
+    expect(s.performance.rolling.brier).toBeCloseTo(mean(scored.map((e) => br(e.forecast.probabilities, y(e)))), 12);
+    expect(s.performance.rolling.baselineBrier).toBeCloseTo(mean(scored.map((e) => br(e.forecast.vectors.baseline, y(e)))), 12);
+    expect(s.performance.rolling.baselineTopRangeHitRate).toBeCloseTo(mean(scored.map((e) => (topRange(e.forecast.vectors.baseline) === y(e) ? 1 : 0))), 12);
   });
 
   it('warming up below 20 rounds: no forecast', () => {

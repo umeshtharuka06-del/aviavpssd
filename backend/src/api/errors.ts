@@ -31,6 +31,8 @@ export class AppError extends Error {
     readonly code: ErrorCode,
     message: string,
     readonly details?: Record<string, unknown>,
+    /** Internal cause of a 5xx; written to the server log (errorFacts), never to the response. */
+    override readonly cause?: unknown,
   ) {
     super(message);
     this.status = STATUS[code];
