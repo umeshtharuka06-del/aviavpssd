@@ -189,3 +189,81 @@ describe('backfill of the visible results (PostgreSQL)', () => {
     expect(await count('game_observations')).toBe(25);
   });
 });
+
+describe('collector continuity (PostgreSQL, extension 0.2.1+)', () => {
+  const chain = randomUUID();
+  const ingestC = (multipliers: number[], c: { chain: string; index: number }) =>
+    h.app.inject({
+      method: 'POST',
+      url: '/v1/history',
+      headers: bearer(token),
+      payload: { batchId: randomUUID(), siteId: 'devfixture', adapterVersion: '1.0.0', observations: multipliers.map((m) => ({ multiplier: m })), continuity: c },
+    });
+  const breaks = async () => (await h.pool.query('SELECT break_before AS b, chain_index AS i FROM game_observations ORDER BY id')).rows as Array<{ b: boolean | null; i: number | null }>;
+
+  it('records verified successors along one chain, and a break where a batch is missing', async () => {
+    expect((await ingestC(seq(3), { chain, index: 0 })).statusCode).toBe(200);
+    await ingestC(seq(2, 3), { chain, index: 3 });
+    await ingestC(seq(1, 9), { chain, index: 9 }); // positions 5–8 never arrived
+    expect(await breaks()).toEqual([
+      { b: true, i: 0 },
+      { b: false, i: 1 },
+      { b: false, i: 2 },
+      { b: false, i: 3 },
+      { b: false, i: 4 },
+      { b: true, i: 9 },
+    ]);
+  });
+
+  it('a new chain is a break even seconds later; the warm-up needs 20 verified consecutive rounds', async () => {
+    await ingestC(seq(15), { chain, index: 0 });
+    await ingestC(seq(15, 15), { chain: randomUUID(), index: 0 }); // the collector lost track in between
+    let s = await signal();
+    expect(s.rounds).toBe(30);
+    expect(s.state).toBe('warming_up');
+    expect(s).toMatchObject({ currentRun: 15, longestRun: 15 });
+    expect(s.reason).toMatch(/15 of 20 consecutive verified rounds/);
+    const c2 = (await h.pool.query('SELECT chain_id FROM game_observations ORDER BY id DESC LIMIT 1')).rows[0].chain_id as string;
+    await ingestC(seq(5, 30), { chain: c2, index: 15 });
+    s = await signal();
+    expect(s.state).toBe('experimental');
+    expect(s).toMatchObject({ currentRun: 20, longestRun: 20 });
+  });
+
+  it('a forecast across a lost round is void even without a time gap; a verified successor is scored even after a delay', async () => {
+    await ingestC(seq(20), { chain, index: 0 });
+    await ingestC([2.5], { chain, index: 21 }); // position 20 lost
+    let s = await signal();
+    expect(s.performance).toMatchObject({ scored: 0, voided: 1 });
+    // a delayed upload (12 minutes later) of the verified next round still counts
+    await h.pool.query("UPDATE game_observations SET received_at = received_at - interval '12 minutes'");
+    await ingestC([1.4], { chain, index: 22 });
+    s = await signal();
+    expect(s.performance).toMatchObject({ scored: 1, voided: 1 });
+  });
+
+  it('backfill aligned by value continues the stored chain; its live rounds follow it', async () => {
+    await ingestC(seq(10), { chain, index: 0 });
+    const c2 = randomUUID();
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/v1/history/backfill',
+      headers: bearer(token),
+      payload: { batchId: randomUUID(), siteId: 'devfixture', adapterVersion: '1.0.0', multipliers: [...seq(6, 4), 7.77, 8.88], continuity: { chain: c2, index: 0 } },
+    });
+    expect(res.json()).toEqual({ result: 'stored', accepted: 2, alreadyStored: 6 });
+    await ingestC([1.5], { chain: c2, index: 8 });
+    const rows = await breaks();
+    expect(rows.slice(-3)).toEqual([
+      { b: false, i: 6 }, // verified by the value alignment
+      { b: false, i: 7 },
+      { b: false, i: 8 }, // the first live round right after the backfill
+    ]);
+  });
+
+  it('rounds from older clients keep NULL continuity and the 120 s time rule', async () => {
+    await ingest(seq(20));
+    expect((await breaks()).every((r) => r.b === null && r.i === null)).toBe(true);
+    expect((await signal()).state).toBe('experimental');
+  });
+});
