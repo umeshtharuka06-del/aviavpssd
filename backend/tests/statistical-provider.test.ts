@@ -24,7 +24,7 @@ function item(items: Array<{ label: string; value: string }>, label: string): st
 describe('StatisticalAnalysisProvider', () => {
   it('has correct metadata', () => {
     expect(provider.kind).toBe('live');
-    expect(provider.version).toBe('stat-5.2');
+    expect(provider.version).toBe('stat-5.3');
     expect(provider.isTestData).toBe(false);
   });
 

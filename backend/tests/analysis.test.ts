@@ -46,7 +46,7 @@ describe('analysis (statistical provider)', () => {
     const body = AnalysisResponseSchema.parse(res.json());
     expect(body.status).toBe('insufficient_data');
     expect(body.isTestData).toBe(false);
-    expect(body.engine).toEqual({ kind: 'live', version: 'stat-5.2' });
+    expect(body.engine).toEqual({ kind: 'live', version: 'stat-5.3' });
     expect(body.observationsConsidered).toBe(0);
   });
 
@@ -66,7 +66,7 @@ describe('analysis (statistical provider)', () => {
     const body = AnalysisResponseSchema.parse(res.json());
     expect(body.status).toBe('ok');
     expect(body.isTestData).toBe(false);
-    expect(body.engine).toEqual({ kind: 'live', version: 'stat-5.2' });
+    expect(body.engine).toEqual({ kind: 'live', version: 'stat-5.3' });
     expect(body.observationsConsidered).toBe(10);
     expect(body.windowHours).toBe(12);
     expect(body.items.length).toBe(6);
