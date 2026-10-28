@@ -271,6 +271,28 @@ export declare const SignalRulesSchema: z.ZodObject<{
     gapSeconds: z.ZodNumber;
 }, z.core.$strip>;
 export type SignalRules = z.infer<typeof SignalRulesSchema>;
+/**
+ * Representative multiplier for the current forecast (stat-5.3+). The models forecast RANGES only;
+ * none of them forecasts where inside a range the multiplier will land. So this is NOT a predicted
+ * exact multiplier. It is the median of the recorded multipliers that fell in the forecast's most
+ * likely range, over the rounds the forecast was built from (rounds up to its input boundary only).
+ * It is the same kind of value before every round with the same top range, and it is not scored.
+ * Unavailable (multiplier null) when fewer than REPRESENTATIVE_MIN_SAMPLE such rounds exist.
+ */
+export declare const REPRESENTATIVE_MIN_SAMPLE = 10;
+export declare const RepresentativeEstimateSchema: z.ZodObject<{
+    method: z.ZodLiteral<"top_range_conditional_median">;
+    forecastId: z.ZodString;
+    range: z.ZodNumber;
+    multiplier: z.ZodNullable<z.ZodNumber>;
+    low: z.ZodNullable<z.ZodNumber>;
+    high: z.ZodNullable<z.ZodNumber>;
+    sample: z.ZodNumber;
+    inputRounds: z.ZodNumber;
+    minSample: z.ZodNumber;
+    unavailableReason: z.ZodNullable<z.ZodString>;
+}, z.core.$strip>;
+export type RepresentativeEstimate = z.infer<typeof RepresentativeEstimateSchema>;
 export declare const NextRoundSignalSchema: z.ZodObject<{
     method: z.ZodLiteral<"sequential_v1">;
     state: z.ZodEnum<{
@@ -343,6 +365,18 @@ export declare const NextRoundSignalSchema: z.ZodObject<{
             scoredAt: z.ZodISODateTime;
         }, z.core.$strip>], "status">;
     }, z.core.$strip>>;
+    representative: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+        method: z.ZodLiteral<"top_range_conditional_median">;
+        forecastId: z.ZodString;
+        range: z.ZodNumber;
+        multiplier: z.ZodNullable<z.ZodNumber>;
+        low: z.ZodNullable<z.ZodNumber>;
+        high: z.ZodNullable<z.ZodNumber>;
+        sample: z.ZodNumber;
+        inputRounds: z.ZodNumber;
+        minSample: z.ZodNumber;
+        unavailableReason: z.ZodNullable<z.ZodString>;
+    }, z.core.$strip>>>;
     changeProbability: z.ZodNullable<z.ZodNumber>;
     performance: z.ZodObject<{
         scored: z.ZodNumber;

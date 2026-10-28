@@ -344,6 +344,18 @@ export declare const AnalysisResponseSchema: z.ZodObject<{
                 scoredAt: z.ZodISODateTime;
             }, z.core.$strip>], "status">;
         }, z.core.$strip>>;
+        representative: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+            method: z.ZodLiteral<"top_range_conditional_median">;
+            forecastId: z.ZodString;
+            range: z.ZodNumber;
+            multiplier: z.ZodNullable<z.ZodNumber>;
+            low: z.ZodNullable<z.ZodNumber>;
+            high: z.ZodNullable<z.ZodNumber>;
+            sample: z.ZodNumber;
+            inputRounds: z.ZodNumber;
+            minSample: z.ZodNumber;
+            unavailableReason: z.ZodNullable<z.ZodString>;
+        }, z.core.$strip>>>;
         changeProbability: z.ZodNullable<z.ZodNumber>;
         performance: z.ZodObject<{
             scored: z.ZodNumber;

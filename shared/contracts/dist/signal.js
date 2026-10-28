@@ -170,6 +170,33 @@ export const SignalRulesSchema = z.object({
     minEvents: z.number().int().positive(),
     gapSeconds: z.number().int().positive(),
 });
+/**
+ * Representative multiplier for the current forecast (stat-5.3+). The models forecast RANGES only;
+ * none of them forecasts where inside a range the multiplier will land. So this is NOT a predicted
+ * exact multiplier. It is the median of the recorded multipliers that fell in the forecast's most
+ * likely range, over the rounds the forecast was built from (rounds up to its input boundary only).
+ * It is the same kind of value before every round with the same top range, and it is not scored.
+ * Unavailable (multiplier null) when fewer than REPRESENTATIVE_MIN_SAMPLE such rounds exist.
+ */
+export const REPRESENTATIVE_MIN_SAMPLE = 10;
+export const RepresentativeEstimateSchema = z.object({
+    method: z.literal('top_range_conditional_median'),
+    /** The forecast it belongs to (signal.current.id). */
+    forecastId: z.string().regex(/^fc_[0-9A-Z]{16}$/),
+    /** Index of the forecast's most likely range. */
+    range: z.number().int().min(0).max(RANGE_COUNT - 1),
+    /** Median, rounded to two decimals; null when unavailable. */
+    multiplier: z.number().min(1).nullable(),
+    /** 25th and 75th percentiles of the same rounds (nearest rank); null when unavailable. */
+    low: z.number().min(1).nullable(),
+    high: z.number().min(1).nullable(),
+    /** Rounds in that range among `inputRounds` (the rounds read, all at or before the input boundary). */
+    sample: z.number().int().nonnegative(),
+    inputRounds: z.number().int().nonnegative(),
+    minSample: z.number().int().positive(),
+    /** Why it is unavailable; null when available. */
+    unavailableReason: z.string().max(200).nullable(),
+});
 export const NextRoundSignalSchema = z.object({
     method: z.literal('sequential_v1'),
     state: SignalStateSchema,
@@ -189,6 +216,8 @@ export const NextRoundSignalSchema = z.object({
     latestRoundAt: IsoDateTimeSchema.nullable(),
     /** The forecast for the round after the latest stored round; null while warming up. */
     current: ForecastRecordSchema.nullable(),
+    /** Representative multiplier inside the current forecast's most likely range (stat-5.3+; absent from older servers). */
+    representative: RepresentativeEstimateSchema.nullable().optional(),
     /** Posterior probability that the range distribution changed within the last 30 rounds (change-point model). */
     changeProbability: Prob.nullable(),
     performance: PerformanceSchema,

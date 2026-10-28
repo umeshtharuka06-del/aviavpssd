@@ -23,6 +23,18 @@ The forecast is the probability of each of four mutually exclusive ranges for th
 
 Multipliers are stored with two decimals. The four probabilities always sum to 1 (checked server-side, by the contract and again by the panel). The threshold chances come from the same numbers, so they are always consistent: **P(≥2×) = r2 + r5 + r10**, **P(≥5×) = r5 + r10**, **P(≥10×) = r10**.
 
+## Representative multiplier (headline figure, stat-5.3)
+
+The panel's large figure ("~1.42×") is the **median of the recorded multipliers that fell in the current forecast's most likely range**, among the rounds that forecast was built from. It is computed by `representativeOf` in `backend/src/engine/sequential/engine.ts` and returned as `nextRound.representative`.
+
+- **Why not an "exact" prediction.** Every model forecasts only the four range probabilities. None forecasts where inside a range the next multiplier will land, so no model-derived exact multiplier exists. The range comes from the model; the position inside it is a summary of past rounds in that range.
+- **Why the conditional median.** It is a typical value of the selected range that always lies inside it, does not depend on the heavy tail, and is an actually observed level. The mean is pulled up by rare large values, and a mode does not exist for two-decimal continuous data.
+- **Definition.** Take the input rounds: retained rounds at or before the forecast's input boundary, never later ones. Keep those whose multiplier is in the top range (the boundary rules above). Their median, floored to two decimals, is the estimate; floor keeps a mid-point median such as 1.985 below the range's upper bound. The 25th and 75th percentiles (nearest rank) are shown as the "middle half".
+- **Minimum sample.** At least `REPRESENTATIVE_MIN_SAMPLE` = 10 such rounds. Below that, the multiplier is `null`, and the panel shows **Exact multiplier unavailable** with the reason. The range estimate stays.
+- **Checks.** The panel rejects the whole forecast (ANALYSIS UNAVAILABLE) if the value is for another forecast, is not for the top range, lies outside the range or its quartiles, or has too small a sample.
+- **Not scored and not validated.** The value changes only slowly. It is the same kind of value before every round with the same top range, and it carries no information about this particular round beyond the range chance. Its accuracy is not tracked; only the range forecast is scored.
+- **Older servers.** Servers before stat-5.3 do not send the field, and the panel then shows "Exact multiplier unavailable — this server version does not provide a representative multiplier". The response change is additive; no migration is needed.
+
 ## The live process (every round)
 
 When a round is stored (`POST /v1/history`, or the one-off backfill), inside one per-device database lock:
@@ -128,8 +140,9 @@ There is **no "confidence %"**: no single number in the panel claims how sure a 
 5. Install extension 0.2.1 (`extension/release/aviator-extension-0.2.1.zip`, built for `https://api.shoptrack.site`) as an in-place update.
 6. **Rollback:** redeploy the previous image. The new tables and columns are unused by older code and can stay. Extensions 0.1.5, 0.2.0 and 0.2.1 work with either server.
 
-## What the panel shows (0.2.1)
+## What the panel shows (0.2.1; 0.2.2 adds the headline)
 
+- **Headline (0.2.2, top of the card)**: NEXT ROUND ESTIMATE, the representative multiplier (largest text, or "Exact multiplier unavailable"); MOST LIKELY RANGE directly under it, with its estimated chance. The status line, which still reads EXPERIMENTAL / BASELINE ONLY / VALIDATED, follows. The reason, sample, last result, scores and score table move into a smaller **Model status and accuracy** section below the range chances. The forecast history card follows the main card.
 - **Status** (WARMING UP · EXPERIMENTAL ESTIMATE · BASELINE ONLY · VALIDATED SIGNAL, plus SERVER UPDATE NEEDED / ANALYSIS UNAVAILABLE), with the forecast id and issue time.
 - **Range chances** for 1.00–1.99× / 2.00–4.99× / 5.00–9.99× / 10.00×+ (they sum to 100% before rounding). Each bar has a tick at the baseline chance, and a **Δ pp** column gives the difference from the baseline. A sentence says whether the estimate is practically the same as the baseline (under 1 pp) or how far it differs, "not validated and may be chance".
 - **Most likely range**, and the baseline chances with the number of rounds behind them.
