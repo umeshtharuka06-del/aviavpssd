@@ -29,6 +29,8 @@ export declare const MULTIPLIER_RANGES: readonly [{
 export declare const RANGE_COUNT: 4;
 /** Index into MULTIPLIER_RANGES for a valid multiplier (≥ 1). */
 export declare function rangeIndex(m: number): number;
+export declare function rangeHit(multiplier: number, range: number): boolean;
+export declare function targetHit(multiplier: number, target: number): boolean;
 /** Threshold events derived from a range distribution: P(≥2×) = r2+r5+r10, P(≥5×) = r5+r10, P(≥10×) = r10. */
 export declare const SIGNAL_THRESHOLDS: readonly [2, 5, 10];
 export declare function thresholdProbabilities(p: readonly number[]): {

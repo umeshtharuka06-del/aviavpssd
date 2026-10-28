@@ -25,6 +25,22 @@ export function rangeIndex(m: number): number {
   return 3;
 }
 
+/**
+ * Two separate scores for a resolved round, never combined:
+ *   range hit   the actual multiplier fell INSIDE a given range (e.g. the forecast's most likely range);
+ *   target hit  the actual multiplier REACHED OR EXCEEDED a target (4.00× hits a 2× target, misses 5×).
+ * Both compare whole cents, so float noise (1.9999999) never moves a boundary.
+ */
+const cents = (x: number) => Math.round(x * 100);
+export function rangeHit(multiplier: number, range: number): boolean {
+  const r = MULTIPLIER_RANGES[range];
+  if (!r) return false;
+  return cents(multiplier) >= cents(r.min) && (r.max == null || cents(multiplier) < cents(r.max));
+}
+export function targetHit(multiplier: number, target: number): boolean {
+  return cents(multiplier) >= cents(target);
+}
+
 /** Threshold events derived from a range distribution: P(≥2×) = r2+r5+r10, P(≥5×) = r5+r10, P(≥10×) = r10. */
 export const SIGNAL_THRESHOLDS = [2, 5, 10] as const;
 export function thresholdProbabilities(p: readonly number[]): { p2: number; p5: number; p10: number } {
