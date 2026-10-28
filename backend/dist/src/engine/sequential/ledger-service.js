@@ -3,6 +3,7 @@ import { HISTORY_RETENTION_HOURS, SIGNAL_MODELS } from '@aviator/contracts';
 import { withTransaction } from '../../database/pool.js';
 import { isValidMultiplier } from '../summary.js';
 import { brier, buildSignal, evidenceOf, ENGINE_VERSION, issueForecast, logLoss, resolve, SIGNAL_RULES, topRange, } from './engine.js';
+import { strategyHits } from './strategy.js';
 /**
  * PostgreSQL side of the forecast ledger (tables round_forecasts / forecast_outcomes, migration 0004).
  *
@@ -38,7 +39,7 @@ async function loadRounds(db, device, site) {
 }
 async function loadLedger(db, device, site) {
     const { rows } = await db.query(`SELECT f.id::text, f.public_id, f.input_last_observation_id::text, f.input_last_received_at, f.input_round_count, f.engine_version,
-            f.state, f.displayed_model, f.probabilities, f.model_vectors, f.issue_evidence, f.issued_at,
+            f.state, f.displayed_model, f.probabilities, f.model_vectors, f.issue_evidence, f.strategy, f.issued_at,
             o.status AS o_status, o.void_reason, o.target_observation_id::text, o.actual_multiplier, o.actual_range, o.scored_at
        FROM round_forecasts f LEFT JOIN forecast_outcomes o ON o.forecast_id = f.id
       WHERE f.device_activation_id = $1 AND f.site_id = $2
@@ -56,6 +57,7 @@ async function loadLedger(db, device, site) {
             probabilities: r.probabilities.map(Number),
             vectors: r.model_vectors,
             atIssue: r.issue_evidence,
+            strategy: r.strategy,
         };
         let outcome = null;
         if (r.o_status === 'void')
@@ -75,9 +77,10 @@ async function loadLedger(db, device, site) {
 }
 async function insertOutcome(db, rowId, f, o) {
     const scored = o.status === 'scored';
+    const hits = scored && f.strategy ? strategyHits(f.strategy, o.multiplier) : null;
     const { rows } = await db.query(`INSERT INTO forecast_outcomes (forecast_id, status, void_reason, target_observation_id, actual_multiplier, actual_range,
-                                    log_loss, baseline_log_loss, brier, top_range_hit)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                                    log_loss, baseline_log_loss, brier, top_range_hit, target_hit, strategy_range_hit)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (forecast_id) DO NOTHING RETURNING scored_at`, [
         rowId,
         o.status,
@@ -89,6 +92,8 @@ async function insertOutcome(db, rowId, f, o) {
         scored ? logLoss(f.vectors.baseline, o.range) : null,
         scored ? brier(f.probabilities, o.range) : null,
         scored ? topRange(f.probabilities) === o.range : null,
+        hits ? hits.targetHit : null,
+        hits ? hits.strategyRangeHit : null,
     ]);
     return rows[0] ? { ...o, scoredAt: rows[0].scored_at } : o;
 }
@@ -123,8 +128,8 @@ export async function syncLedgerLocked(db, device, site) {
     let issuedNow = 0;
     if (forecast && last && !ledger.some((e) => e.forecast.inputLastRoundId === last.id)) {
         const { rows } = await db.query(`INSERT INTO round_forecasts (public_id, device_activation_id, site_id, input_last_observation_id, input_last_received_at,
-                                    input_round_count, engine_version, state, displayed_model, probabilities, model_vectors, issue_evidence)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                                    input_round_count, engine_version, state, displayed_model, probabilities, model_vectors, issue_evidence, strategy)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        ON CONFLICT ON CONSTRAINT round_forecasts_once DO NOTHING RETURNING id::text, issued_at`, [
             forecast.id,
             device,
@@ -138,6 +143,7 @@ export async function syncLedgerLocked(db, device, site) {
             forecast.probabilities,
             JSON.stringify(Object.fromEntries(SIGNAL_MODELS.map((m) => [m, forecast.vectors[m]]))),
             JSON.stringify(forecast.atIssue),
+            forecast.strategy ? JSON.stringify(forecast.strategy) : null,
         ]);
         if (rows[0]) {
             ledger.push({ rowId: rows[0].id, forecast: { ...forecast, issuedAt: rows[0].issued_at }, outcome: null });

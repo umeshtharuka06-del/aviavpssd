@@ -1,4 +1,5 @@
 import { RANGE_COUNT, rangeIndex } from '@aviator/contracts';
+import { RangeStrategyTracker } from './strategy.js';
 /**
  * Reference distribution implied by a 97% RTP at every cash-out target, P(M ≥ m) = 0.97 ÷ m
  * (an UNVERIFIED assumption, see docs/RESEARCH.md). Used only as the centre of the baseline prior.
@@ -400,11 +401,16 @@ export function createModelSet() {
     const changepoint = new ChangepointModel();
     // The baseline is observed FIRST so candidates shrink toward the baseline including the same rounds.
     const all = [baseline, new EwmaModel(baseline), new MarkovModel(baseline), new StreakModel(baseline), new LogitModel(baseline), changepoint];
+    const strategy = new RangeStrategyTracker();
     return {
         baseline,
         changepoint,
+        strategy,
         all,
-        observe: (r) => all.forEach((m) => m.observe(r)),
+        observe: (r) => {
+            all.forEach((m) => m.observe(r));
+            strategy.observe(r);
+        },
         predictAll: () => Object.fromEntries(all.map((m) => [m.id, m.predict()])),
     };
 }
