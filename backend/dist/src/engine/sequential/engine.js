@@ -1,4 +1,4 @@
-import { MULTIPLIER_RANGES, RANGE_COUNT, rangeIndex, SIGNAL_CANDIDATES, SIGNAL_MODELS, SIGNAL_THRESHOLDS, SIGNAL_WARMUP_ROUNDS, REPRESENTATIVE_MIN_SAMPLE, } from '@aviator/contracts';
+import { MULTIPLIER_RANGES, RANGE_COUNT, rangeIndex, SIGNAL_CANDIDATES, SIGNAL_MODELS, SIGNAL_THRESHOLDS, targetHit, SIGNAL_WARMUP_ROUNDS, REPRESENTATIVE_MIN_SAMPLE, } from '@aviator/contracts';
 import { createModelSet } from './models.js';
 /**
  * Round-by-round forecasting with an immutable ledger (contract: NextRoundSignalSchema).
@@ -272,7 +272,7 @@ export function performanceOf(entries, rules = SIGNAL_RULES) {
         else if (e.outcome.status === 'void')
             voided++;
         else
-            scored.push({ p: e.forecast.probabilities, b: e.forecast.vectors.baseline, y: e.outcome.range });
+            scored.push({ p: e.forecast.probabilities, b: e.forecast.vectors.baseline, y: e.outcome.range, m: e.outcome.multiplier });
     }
     const hit = (s, key) => (s.length ? s.filter((x) => topRange(x[key]) === x.y).length / s.length : null);
     const ll = (s, key) => mean(s.map((x) => logLoss(x[key], x.y)));
@@ -292,7 +292,7 @@ export function performanceOf(entries, rules = SIGNAL_RULES) {
         const pt = (v) => v.slice(from).reduce((a, x) => a + x, 0);
         const ps = scored.map((x) => pt(x.p));
         const bs = scored.map((x) => pt(x.b));
-        const ys = scored.map((x) => (x.y >= from ? 1 : 0));
+        const ys = scored.map((x) => (targetHit(x.m, t) ? 1 : 0)); // the actual multiplier reached the threshold
         const events = ys.reduce((a, v) => a + v, 0);
         const nonEvents = ys.length - events;
         const bl = (p) => mean(p.map((v, i) => -(ys[i] ? LN(clipP(v)) : LN(clipP(1 - v)))));
