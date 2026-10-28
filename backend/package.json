@@ -17,7 +17,8 @@
     "test": "vitest run",
     "backtest": "tsx src/engine/backtest-cli.ts",
     "backtest:signal": "tsx src/engine/sequential/backtest.ts",
-    "evaluate:signal": "tsx src/engine/sequential/evaluate.ts"
+    "evaluate:signal": "tsx src/engine/sequential/evaluate.ts",
+    "evaluate:strategy": "tsx src/engine/sequential/evaluate-strategy.ts"
   },
   "dependencies": {
     "@aviator/contracts": "0.1.0",

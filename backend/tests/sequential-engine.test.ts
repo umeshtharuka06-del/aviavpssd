@@ -1,4 +1,4 @@
-import { NextRoundSignalSchema, rangeHit, rangeIndex, REPRESENTATIVE_MIN_SAMPLE, targetHit, SIGNAL_WARMUP_ROUNDS, thresholdProbabilities } from '@aviator/contracts';
+import { NextRoundSignalSchema, rangeHit, rangeIndex, targetHit, SIGNAL_WARMUP_ROUNDS, thresholdProbabilities } from '@aviator/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   breaksOf,
@@ -8,7 +8,6 @@ import {
   evidenceOf,
   issueForecast,
   replay,
-  representativeOf,
   resolve,
   SIGNAL_RULES,
   topRange,
@@ -260,69 +259,14 @@ describe('backfill alignment', () => {
   });
 });
 
-describe('representative multiplier (median inside the most likely range)', () => {
-  /** Only the fields representativeOf reads; the input boundary is round `last`. */
-  const fc = (rounds: LedgerRound[], last: number, probabilities: number[]): LedgerForecast =>
-    ({ id: 'fc_0000000000000001', inputLastRoundId: rounds[last - 1]!.id, inputLastRoundAt: rounds[last - 1]!.receivedAt, probabilities }) as LedgerForecast;
-  const R1 = [0.52, 0.3, 0.12, 0.06];
-
-  it('is the median of the input rounds in the top range, with nearest-rank quartiles', () => {
-    // 11 rounds in 1.00–1.99× (sorted 1.00 … 1.90 step ~0.09), mixed with rounds in other ranges.
-    const low = [1.5, 1.0, 1.9, 1.2, 1.1, 1.8, 1.3, 1.7, 1.4, 1.6, 1.05];
-    const ms = [...low, 2.5, 3, 7.2, 12, 4.4];
-    const rounds = asRounds(ms);
-    const e = representativeOf(fc(rounds, rounds.length, R1), rounds);
-    const sorted = [...low].sort((a, b) => a - b);
-    expect(e).toMatchObject({ method: 'top_range_conditional_median', range: 0, sample: 11, inputRounds: 16, minSample: REPRESENTATIVE_MIN_SAMPLE, unavailableReason: null });
-    expect(e.multiplier).toBe(sorted[5]); // 1.4
-    expect(e.low).toBe(sorted[Math.ceil(0.25 * 11) - 1]);
-    expect(e.high).toBe(sorted[Math.ceil(0.75 * 11) - 1]);
-  });
-
-  it('uses the top range of the forecast, whatever it is', () => {
-    const ms = Array.from({ length: 12 }, (_, i) => 2 + i * 0.25); // 2.00 … 4.75
-    const rounds = asRounds([...ms, 1.2, 1.3]);
-    const e = representativeOf(fc(rounds, rounds.length, [0.3, 0.45, 0.17, 0.08]), rounds);
-    expect(e.range).toBe(1);
-    expect(e.sample).toBe(12);
-    expect(e.multiplier).toBe(3.37); // (3.25 + 3.5) / 2 = 3.375, floored to two decimals
-    expect(rangeIndex(e.multiplier!)).toBe(1);
-  });
-
-  it('an even-sized median at the top of a range stays inside the range', () => {
-    const rounds = asRounds([...Array(5).fill(1.98), ...Array(5).fill(1.99)]); // median (1.98 + 1.99) / 2 = 1.985
-    const e = representativeOf(fc(rounds, rounds.length, R1), rounds);
-    expect(e.multiplier).toBe(1.98);
-    expect(rangeIndex(e.multiplier!)).toBe(0);
-  });
-
-  it('never reads rounds after the input boundary (no leakage)', () => {
-    const before = fairSequence(80, 11);
-    const rounds = asRounds([...before, ...Array(200).fill(1.01)]);
-    const f = fc(rounds, before.length, R1);
-    const withLater = representativeOf(f, rounds);
-    const only = representativeOf(f, rounds.slice(0, before.length));
-    expect(withLater).toEqual(only);
-    expect(withLater.inputRounds).toBe(80);
-  });
-
-  it('is unavailable, with the reason, when fewer than the minimum rounds fell in the range', () => {
-    const rounds = asRounds([1.2, 1.5, 1.8, 2.5, 3.1, 12]);
-    const e = representativeOf(fc(rounds, rounds.length, R1), rounds);
-    expect(e).toMatchObject({ multiplier: null, low: null, high: null, sample: 3, inputRounds: 6 });
-    expect(e.unavailableReason).toMatch(/Only 3 of the 6 rounds .* at least 10/);
-  });
-
-  it('is in the response for the current forecast only, and the response still matches the contract', () => {
+describe('representative multiplier (withdrawn in stat-5.4)', () => {
+  it('the response carries no median of past rounds as a next-round estimate, and still matches the contract', () => {
     const rounds = asRounds(fairSequence(120, 12));
     const s = buildSignal(rounds, replay(rounds).entries, null);
     expect(() => NextRoundSignalSchema.parse(s)).not.toThrow();
-    expect(s.representative!.forecastId).toBe(s.current!.id);
-    expect(s.representative!.range).toBe(topRange(s.current!.probabilities));
-    expect(s.representative!.multiplier).not.toBeNull();
-    expect(rangeIndex(s.representative!.multiplier!)).toBe(s.representative!.range);
-    const warming = asRounds(fairSequence(10, 13));
-    expect(buildSignal(warming, replay(warming).entries, null).representative).toBeNull();
+    expect(s.representative).toBeNull();
+    expect(s.current!.strategy!.multiplierEstimate).toBeNull();
+    expect(s.current!.strategy!.multiplierEstimateReason).toMatch(/no exact multiplier/);
   });
 });
 

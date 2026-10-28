@@ -1,4 +1,5 @@
 import { RANGE_COUNT, rangeIndex, type SignalModel } from '@aviator/contracts';
+import { RangeStrategyTracker } from './strategy.js';
 
 /**
  * Online forecasting models for the next round's multiplier RANGE (see MULTIPLIER_RANGES).
@@ -413,6 +414,8 @@ export class ChangepointModel implements OnlineModel {
 export interface ModelSet {
   baseline: BaselineModel;
   changepoint: ChangepointModel;
+  /** Range state machine (not a range model of the ensemble; fed the same rounds). */
+  strategy: RangeStrategyTracker;
   all: OnlineModel[];
   observe(r: RoundInput): void;
   /** Range distribution of every model (ensemble excluded) for the next, unobserved round. */
@@ -424,11 +427,16 @@ export function createModelSet(): ModelSet {
   const changepoint = new ChangepointModel();
   // The baseline is observed FIRST so candidates shrink toward the baseline including the same rounds.
   const all: OnlineModel[] = [baseline, new EwmaModel(baseline), new MarkovModel(baseline), new StreakModel(baseline), new LogitModel(baseline), changepoint];
+  const strategy = new RangeStrategyTracker();
   return {
     baseline,
     changepoint,
+    strategy,
     all,
-    observe: (r) => all.forEach((m) => m.observe(r)),
+    observe: (r) => {
+      all.forEach((m) => m.observe(r));
+      strategy.observe(r);
+    },
     predictAll: () => Object.fromEntries(all.map((m) => [m.id, m.predict()])) as ReturnType<ModelSet['predictAll']>,
   };
 }

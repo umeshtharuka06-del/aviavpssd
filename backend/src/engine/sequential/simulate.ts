@@ -39,6 +39,24 @@ export function plantedSequence(n: number, seed: number, effect: number): number
   return out;
 }
 
+/**
+ * Rounds with a PLANTED low-run effect (positive control for the range state machine): after at least
+ * `afterLows` consecutive rounds below 2×, the next round reaches 2× with probability 0.485 + effect;
+ * otherwise with 0.485. Within each side the multiplier keeps the fair conditional shape.
+ */
+export function plantedRunSequence(n: number, seed: number, effect: number, afterLows = 5): number[] {
+  const rand = prng(seed);
+  const out: number[] = [];
+  let lows = 0;
+  for (let i = 0; i < n; i++) {
+    const pHigh = 0.485 + (lows >= afterLows ? effect : 0);
+    const m = rand() < pHigh ? Math.max(2, Math.floor(200 / (1 - rand())) / 100) : Math.min(1.99, 1 + Math.floor(rand() * 100) / 100);
+    out.push(m);
+    lows = m < 2 ? lows + 1 : 0;
+  }
+  return out;
+}
+
 export function fairSequence(n: number, seed: number, rtp = 0.97): number[] {
   const rand = prng(seed);
   return Array.from({ length: n }, () => fairMultiplier(rand, rtp));

@@ -244,7 +244,7 @@ describe('migration 0002 on an existing database', () => {
                         VALUES (1, '30d', '2026-01-01T00:00:00Z', '2026-01-31T00:00:00Z')`);
       await pool.query(`INSERT INTO device_activations (subscription_id, device_hash) VALUES (1, decode(repeat('22', 32), 'hex'))`);
 
-      expect(await migrate(pool)).toEqual(['0002_device_management.sql', '0003_device_scoped_analysis.sql', '0004_round_forecast_ledger.sql', '0005_round_continuity.sql']);
+      expect(await migrate(pool)).toEqual(['0002_device_management.sql', '0003_device_scoped_analysis.sql', '0004_round_forecast_ledger.sql', '0005_round_continuity.sql', '0006_range_strategy.sql']);
       const r = await pool.query(`SELECT c.device_limit, s.activated_at, s.expires_at, d.public_id, d.deactivated_at
                                     FROM activation_codes c JOIN subscriptions s ON s.activation_code_id = c.id
                                     JOIN device_activations d ON d.subscription_id = s.id`);

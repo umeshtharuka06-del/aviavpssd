@@ -7,19 +7,19 @@ import {
   SIGNAL_THRESHOLDS,
   targetHit,
   SIGNAL_WARMUP_ROUNDS,
-  REPRESENTATIVE_MIN_SAMPLE,
   type ForecastRecord,
   type IssueEvidence,
   type ModelStanding,
   type NextRoundSignal,
   type Performance,
-  type RepresentativeEstimate,
+  type RangeStrategyForecast,
   type SignalModel,
   type SignalRules,
   type SignalState,
   type ThresholdPerformance,
 } from '@aviator/contracts';
 import { createModelSet, type ModelSet } from './models.js';
+import { strategyHits, strategyPerformanceOf, type StrategyScore } from './strategy.js';
 
 /**
  * Round-by-round forecasting with an immutable ledger (contract: NextRoundSignalSchema).
@@ -43,9 +43,11 @@ import { createModelSet, type ModelSet } from './models.js';
 
 /**
  * Engine version recorded with every forecast (stat-5.1: continuity, verified-run warm-up; stat-5.2:
- * rolling Brier, failure causes; stat-5.3: representative multiplier in the response, forecasts unchanged).
+ * rolling Brier, failure causes; stat-5.3: representative multiplier in the response, forecasts unchanged;
+ * stat-5.4: range state machine recorded with every forecast, separate target/range scoring, the
+ * representative median withdrawn because it was not a forecast).
  */
-export const ENGINE_VERSION = 'stat-5.3';
+export const ENGINE_VERSION = 'stat-5.4';
 
 export const SIGNAL_RULES: SignalRules = Object.freeze({
   warmupRounds: SIGNAL_WARMUP_ROUNDS,
@@ -109,6 +111,8 @@ export interface LedgerForecast {
   vectors: Record<SignalModel, number[]>;
   /** Evidence that stood at issue time. */
   atIssue: IssueEvidence;
+  /** Range state machine at issue time (null for forecasts recorded before stat-5.4). */
+  strategy: RangeStrategyForecast | null;
 }
 
 export type LedgerOutcome =
@@ -292,6 +296,7 @@ export function issueWith(models: ModelSet, ev: Evidence, last: LedgerRound | un
     probabilities: [...vectors[d.model]],
     vectors,
     atIssue,
+    strategy: models.strategy.forecast(base.baseline),
   };
 }
 
@@ -462,6 +467,7 @@ export function recordOf(e: LedgerEntry): ForecastRecord {
     probabilities: f.probabilities,
     baselineProbabilities: f.vectors.baseline,
     atIssue: f.atIssue,
+    strategy: f.strategy,
     outcome: !o
       ? { status: 'pending' }
       : o.status === 'void'
@@ -476,40 +482,18 @@ export function recordOf(e: LedgerEntry): ForecastRecord {
             logLoss: logLoss(f.probabilities, o.range),
             baselineLogLoss: logLoss(f.vectors.baseline, o.range),
             brier: Math.min(2, brier(f.probabilities, o.range)),
+            ...(f.strategy ? strategyHits(f.strategy, o.multiplier) : {}),
           },
   };
 }
 
-/**
- * Representative multiplier for a forecast (contract RepresentativeEstimateSchema): the median of the
- * recorded multipliers in the forecast's most likely range, among `rounds` at or before the forecast's
- * input boundary. Range probabilities come from the model; the position inside the range does not —
- * no model forecasts it — so this is a summary of past rounds in that range, not an exact prediction.
- */
-export function representativeOf(f: LedgerForecast, rounds: readonly LedgerRound[], minSample = REPRESENTATIVE_MIN_SAMPLE): RepresentativeEstimate {
-  const range = topRange(f.probabilities);
-  const end = rounds.findIndex((r) => r.id === f.inputLastRoundId);
-  // Never read past the input boundary, even if later rounds are passed in.
-  const input = end >= 0 ? rounds.slice(0, end + 1) : rounds.filter((r) => r.receivedAt <= f.inputLastRoundAt);
-  const xs = input
-    .map((r) => r.multiplier)
-    .filter((m) => rangeIndex(m) === range)
-    .sort((a, b) => a - b);
-  const base = { method: 'top_range_conditional_median' as const, forecastId: f.id, range, sample: xs.length, inputRounds: input.length, minSample };
-  if (xs.length < minSample) {
-    return {
-      ...base,
-      multiplier: null,
-      low: null,
-      high: null,
-      unavailableReason: `Only ${xs.length} of the ${input.length} rounds read fell in this range; at least ${minSample} are needed for a representative multiplier.`,
-    };
+/** Scored forecasts that carry a strategy record, for the strategy's walk-forward record. */
+export function strategyScoresOf(entries: readonly LedgerEntry[]): StrategyScore[] {
+  const out: StrategyScore[] = [];
+  for (const e of entries) {
+    if (e.forecast.strategy && e.outcome?.status === 'scored') out.push({ strategy: e.forecast.strategy, baseline: e.forecast.vectors.baseline, multiplier: e.outcome.multiplier });
   }
-  const n = xs.length;
-  const median = n % 2 ? xs[(n - 1) / 2]! : (xs[n / 2 - 1]! + xs[n / 2]!) / 2;
-  const rank = (q: number) => xs[Math.max(0, Math.ceil(q * n) - 1)]!;
-  // Two decimals like the recorded multipliers; floor keeps a mid-point median below the range's upper bound.
-  return { ...base, multiplier: Math.floor(median * 100 + 1e-9) / 100, low: rank(0.25), high: rank(0.75), unavailableReason: null };
+  return out;
 }
 
 /**
@@ -553,12 +537,14 @@ export function buildSignal(rounds: readonly LedgerRound[], entries: readonly Le
     backfillRounds: backfill,
     latestRoundAt: last ? last.receivedAt.toISOString() : null,
     current: currentEntry ? recordOf(currentEntry) : null,
-    representative: currentEntry ? representativeOf(currentEntry.forecast, rounds) : null,
+    // stat-5.3 sent the median of past rounds in the top range here; it was not a forecast and is withdrawn.
+    representative: null,
     changeProbability,
     performance: performanceOf(entries),
     models,
     history: entries.slice(-HISTORY_LENGTH).reverse().map(recordOf),
     rules: { ...SIGNAL_RULES },
+    strategyPerformance: strategyPerformanceOf(strategyScoresOf(entries)),
   };
 }
 
