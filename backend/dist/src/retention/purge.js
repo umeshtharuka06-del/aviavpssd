@@ -21,6 +21,7 @@ export async function purgeExpiredHistory(pool, batchSize = 5_000) {
             break;
     }
     const b = await pool.query('DELETE FROM ingest_batches WHERE received_at < now() - make_interval(hours => $1)', [HISTORY_RETENTION_HOURS]);
+    await pool.query('DELETE FROM chain_links WHERE created_at < now() - make_interval(hours => $1)', [HISTORY_RETENTION_HOURS]);
     // Forecasts and their outcomes derive from the same rounds and expire on the same schedule.
     const forecasts = await purgeExpiredForecasts(pool, batchSize);
     return { observations, batches: b.rowCount ?? 0, forecasts };

@@ -1,13 +1,15 @@
 import { DEFAULT_MIN_SAMPLE_SIZE } from '@aviator/contracts';
 import { computeForecast, FORECAST_DEFAULTS } from './forecast.js';
 import { computeHistoricalSummary, isValidMultiplier } from './summary.js';
+import { ENGINE_VERSION } from './sequential/engine.js';
 const NOTICE = 'Historical frequencies of this device\'s observed rounds within the retention window. ' +
     'Past results do not predict future outcomes. This is not a signal, prediction, or betting recommendation.';
 const COLLECTING_NOTICE = 'Collecting data — too few rounds observed yet for the figures to be well supported. ' +
     'Past results do not predict future outcomes.';
 export class StatisticalAnalysisProvider {
     kind = 'live';
-    version = 'stat-5.3';
+    /** Same label as the one recorded with every forecast, so the response and the ledger never disagree. */
+    version = ENGINE_VERSION;
     isTestData = false;
     supportsSignal = true;
     minSampleSize;
