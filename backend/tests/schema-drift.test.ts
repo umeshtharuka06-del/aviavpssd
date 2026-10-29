@@ -58,14 +58,14 @@ const backfill = () =>
 const analysis = () => h.app.inject({ method: 'POST', url: '/v1/analysis', headers: bearer(token), payload: { siteId: 'devfixture' } });
 const logged = (msg: string) => h.logs.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => l.msg === msg);
 
-describe('API code newer than the database schema (migrations 0004–0006 not applied)', () => {
+describe('API code newer than the database schema (migrations 0004–0007 not applied)', () => {
   it('reports the pending migrations on readiness (503) and in the log', async () => {
-    expect(await schemaStatus(h.pool)).toEqual({ pending: ['0004_round_forecast_ledger.sql', '0005_round_continuity.sql', '0006_range_strategy.sql'], modified: [] });
+    expect(await schemaStatus(h.pool)).toEqual({ pending: ['0004_round_forecast_ledger.sql', '0005_round_continuity.sql', '0006_range_strategy.sql', '0007_chain_links.sql'], modified: [] });
     const res = await h.app.inject({ method: 'GET', url: '/v1/health/ready' });
     expect(res.statusCode).toBe(503);
     expect(res.json().error.message).toBe('Service is not ready.'); // nothing about the schema in public
     expect(logged('database schema does not match this build')[0]).toMatchObject({
-      pendingMigrations: ['0004_round_forecast_ledger.sql', '0005_round_continuity.sql', '0006_range_strategy.sql'],
+      pendingMigrations: ['0004_round_forecast_ledger.sql', '0005_round_continuity.sql', '0006_range_strategy.sql', '0007_chain_links.sql'],
     });
   });
 
@@ -114,7 +114,7 @@ describe('API code newer than the database schema (migrations 0004–0006 not ap
   it('after the pending migrations run, the same requests succeed and existing history is preserved', async () => {
     const before = (await h.pool.query('SELECT id, multiplier::float AS m FROM game_observations ORDER BY id')).rows;
     expect(before).toHaveLength(30);
-    expect(await migrate(h.pool)).toEqual(['0004_round_forecast_ledger.sql', '0005_round_continuity.sql', '0006_range_strategy.sql']);
+    expect(await migrate(h.pool)).toEqual(['0004_round_forecast_ledger.sql', '0005_round_continuity.sql', '0006_range_strategy.sql', '0007_chain_links.sql']);
     expect((await h.app.inject({ method: 'GET', url: '/v1/health/ready' })).statusCode).toBe(200);
     const after = (await h.pool.query('SELECT id, multiplier::float AS m, source FROM game_observations ORDER BY id')).rows;
     expect(after.map(({ id, m }) => ({ id, m }))).toEqual(before); // every stored round kept, unchanged

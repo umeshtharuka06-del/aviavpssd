@@ -71,8 +71,8 @@ export async function backfillHistory(ctx: AppContext, auth: CustomerAuth, input
       [device, input.batchId],
     );
     if (claim.rowCount === 0) return { result: 'duplicate_batch', accepted: 0, alreadyStored: input.multipliers.length };
-    const { rows } = await db.query<{ multiplier: string; recent: boolean }>(
-      `SELECT multiplier, received_at >= now() - make_interval(secs => $4) AS recent FROM game_observations
+    const { rows } = await db.query<{ row_id: string; multiplier: string; recent: boolean }>(
+      `SELECT id::text AS row_id, multiplier, received_at >= now() - make_interval(secs => $4) AS recent FROM game_observations
         WHERE device_activation_id = $1 AND site_id = $2 AND received_at >= now() - make_interval(hours => $5)
         ORDER BY id DESC LIMIT $3`,
       [device, input.siteId, TAIL, SIGNAL_RULES.gapSeconds, HISTORY_RETENTION_HOURS],
@@ -93,6 +93,14 @@ export async function backfillHistory(ctx: AppContext, auth: CustomerAuth, input
            FROM unnest($2::numeric[]) WITH ORDINALITY AS t(m, ord) ORDER BY ord`,
         [input.siteId, add.map((m) => m.toFixed(2)), device, c?.chain ?? null, c ? c.index + a.from : null, a.from === 0],
       );
+    } else if (input.continuity && a.from > 0) {
+      // Every visible result is stored already (a reload that lost nothing): no row carries the new
+      // chain, so record that its position from − 1 IS the latest stored round (see continuityBreak).
+      await db.query(
+        `INSERT INTO chain_links (device_activation_id, site_id, chain_id, chain_index, observation_id)
+         VALUES ($1, $2, $3::uuid, $4, $5) ON CONFLICT DO NOTHING`,
+        [device, input.siteId, input.continuity.chain, input.continuity.index + a.from - 1, rows[rows.length - 1]!.row_id], // rows is oldest first here
+      );
     }
     await db.query('UPDATE ingest_batches SET accepted_count = $3, duplicate_count = $4 WHERE device_activation_id = $1 AND batch_id = $2', [
       device,
@@ -108,18 +116,26 @@ export async function backfillHistory(ctx: AppContext, auth: CustomerAuth, input
 
 /**
  * break_before for the first round of a batch with continuity: false only when the latest stored
- * round of this device and site comes from the same read chain at the position right before it.
+ * round of this device and site comes from the same read chain at the position right before it, or
+ * a chain link (a backfill that stored nothing new) proved that position is the latest stored round.
  * Anything else (no stored round, another chain, a jump because a batch was lost) is a break.
  */
 export async function continuityBreak(db: PoolClient, device: number, siteId: string, c: Continuity): Promise<boolean> {
-  const { rows } = await db.query<{ chain_id: string | null; chain_index: number | null }>(
-    `SELECT chain_id, chain_index FROM game_observations
+  const { rows } = await db.query<{ row_id: string; chain_id: string | null; chain_index: number | null }>(
+    `SELECT id::text AS row_id, chain_id, chain_index FROM game_observations
       WHERE device_activation_id = $1 AND site_id = $2 AND received_at >= now() - make_interval(hours => $3)
       ORDER BY id DESC LIMIT 1`,
     [device, siteId, HISTORY_RETENTION_HOURS],
   );
   const prev = rows[0];
-  return !(prev && prev.chain_id === c.chain && prev.chain_index === c.index - 1);
+  if (!prev) return true;
+  if (prev.chain_id === c.chain && prev.chain_index === c.index - 1) return false;
+  // A backfill on this chain proved by value alignment that position index − 1 is the latest stored round.
+  const link = await db.query(
+    `SELECT 1 FROM chain_links WHERE device_activation_id = $1 AND site_id = $2 AND chain_id = $3::uuid AND chain_index = $4 AND observation_id = $5`,
+    [device, siteId, c.chain, c.index - 1, prev.row_id],
+  );
+  return link.rowCount === 0;
 }
 
 /** Ledger upkeep after new rounds. A failure here never fails the upload; the next analysis retries it. */
