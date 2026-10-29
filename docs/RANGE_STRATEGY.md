@@ -169,4 +169,28 @@ Watch forecasts only: target hits 64.0% [57.8%, 69.7%], range hits (2.00×–4.9
 * The low count is computed from rounds still in the 12 h retention window (at most 5,000); a run longer than that window is truncated. Not relevant in practice.
 * The live record in the panel is per device and resets with retention (12 h), so it stays small.
 * The extension's release ZIPs are unchanged (no `--package` run). A new ZIP and a version bump are needed to ship the panel.
-* **Deployment order** (needs approval): back up the database → apply migration 0006 → deploy backend stat-5.4 → ship the extension. Until 0006 is applied, stat-5.4 code fails with `database_schema_outdated` (as the schema-drift test shows for earlier migrations). Old extensions keep working with the new server (new fields are optional); they will show "Exact multiplier unavailable" because `representative` is now null.
+* **Deployment order** (needs approval): back up the database → apply migrations 0006 and 0007 → deploy backend stat-5.4 → ship the extension. Until they are applied, stat-5.4 code fails with `database_schema_outdated` (as the schema-drift test shows for earlier migrations). Old extensions keep working with the new server (new fields are optional); they will show "Exact multiplier unavailable" because `representative` is now null.
+
+## 7. Data-path diagnosis (2026-10-29)
+
+Traced from the page to the panel. The content script diffs the visible results list and sends new
+rounds **oldest → newest** with its read chain and position (`src/content/controller.ts`). The upload
+queue keeps the `batchId` across retries. The server inserts in that order (`WITH ORDINALITY … ORDER BY
+ord`), so ids rise in round order, and a repeated `batchId` stores nothing. `break_before` comes from the
+chain position (`continuityBreak`). The ledger rebuilds the state machine from the rounds in id order
+inside the ledger lock and records it with the forecast. The panel draws the forecast for the latest
+stored round.
+
+| Case | Behaviour | Correct? |
+|---|---|---|
+| Rounds out of order | Not possible: client order kept, ids rise in insertion order | yes |
+| Duplicate upload (same batch) | Stored once, counted once, scored once | yes |
+| Rounds lost between uploads (chain jump) | Break → count restarts at the next round | yes, by design: the true run length is unknown |
+| **Game-page reload, nothing lost** | **Was a break**: count restarted and the open forecast was voided | **bug, fixed** (migration 0007) |
+| Reload, then a lost round, or the old tab still storing | Still a break | yes |
+
+The bug: after a reload the new chain's backfill aligned with the stored rounds but added nothing, so
+no stored row carried the new chain and the next live round failed the continuity check. Fix: the
+backfill records a chain link (position ↔ stored round) and the continuity check honours it, for the
+exact next position only. Tests: `backend/tests/strategy-path.test.ts`, including the specified
+sequence (4 lows, 5 lows, misses, then hits at 2.00×, 4.00× and 5.00×) through the real API.
