@@ -1,0 +1,85 @@
+{
+  "description": "Hand-derived expectations for range_state_machine_v1 (5 lows below 2.00x -> ELEVATED-RANGE WATCH, target >= 2.00x, watch range 2.00x-4.99x, kept after misses, reset by a hit or a break). Checked against BOTH research/aviator_engine/strategy.py (pytest) and backend/src/engine/sequential/strategy.ts (vitest). Do not regenerate from either implementation.",
+  "baseline": [0.515, 0.291, 0.097, 0.097],
+  "boundaries": [
+    { "m": 1.0, "range": 0, "ge2": false },
+    { "m": 1.99, "range": 0, "ge2": false },
+    { "m": 2.0, "range": 1, "ge2": true },
+    { "m": 4.99, "range": 1, "ge2": true },
+    { "m": 5.0, "range": 2, "ge2": true },
+    { "m": 9.99, "range": 2, "ge2": true },
+    { "m": 10.0, "range": 3, "ge2": true },
+    { "m": 1000.0, "range": 3, "ge2": true }
+  ],
+  "rowFormat": "[multiplier, breakBefore, targetHit of the forecast issued before this round, strategyRangeHit of that forecast, state after observing (T tracking / W watch), consecutiveLow after, watchForecast after, predictedRange after]",
+  "initial": ["T", 0, 0, 0],
+  "cases": [
+    {
+      "name": "five lows enter WATCH; misses keep it; 2.00x resets; 5.00x is a target hit but a range miss; 4.99x hits both",
+      "rows": [
+        [3.0, false, true, false, "T", 0, 0, 0],
+        [1.2, false, false, true, "T", 1, 0, 0],
+        [1.5, false, false, true, "T", 2, 0, 0],
+        [1.01, false, false, true, "T", 3, 0, 0],
+        [1.99, false, false, true, "T", 4, 0, 0],
+        [1.3, false, false, true, "W", 5, 1, 1],
+        [1.99, false, false, false, "W", 6, 2, 1],
+        [1.1, false, false, false, "W", 7, 3, 1],
+        [2.0, false, true, true, "T", 0, 0, 0],
+        [1.5, false, false, true, "T", 1, 0, 0],
+        [1.5, false, false, true, "T", 2, 0, 0],
+        [1.5, false, false, true, "T", 3, 0, 0],
+        [1.5, false, false, true, "T", 4, 0, 0],
+        [1.5, false, false, true, "W", 5, 1, 1],
+        [5.0, false, true, false, "T", 0, 0, 0],
+        [1.4, false, false, true, "T", 1, 0, 0],
+        [1.4, false, false, true, "T", 2, 0, 0],
+        [1.4, false, false, true, "T", 3, 0, 0],
+        [1.4, false, false, true, "T", 4, 0, 0],
+        [1.4, false, false, true, "W", 5, 1, 1],
+        [4.99, false, true, true, "T", 0, 0, 0]
+      ]
+    },
+    {
+      "name": "a collection break resets the low count before the round is counted",
+      "rows": [
+        [1.1, false, false, true, "T", 1, 0, 0],
+        [1.1, false, false, true, "T", 2, 0, 0],
+        [1.1, false, false, true, "T", 3, 0, 0],
+        [1.1, false, false, true, "T", 4, 0, 0],
+        [1.2, true, false, true, "T", 1, 0, 0],
+        [1.1, false, false, true, "T", 2, 0, 0],
+        [1.1, false, false, true, "T", 3, 0, 0],
+        [1.1, false, false, true, "T", 4, 0, 0],
+        [1.1, false, false, true, "W", 5, 1, 1]
+      ]
+    },
+    {
+      "name": "a break during WATCH ends it",
+      "rows": [
+        [1.1, false, false, true, "T", 1, 0, 0],
+        [1.1, false, false, true, "T", 2, 0, 0],
+        [1.1, false, false, true, "T", 3, 0, 0],
+        [1.1, false, false, true, "T", 4, 0, 0],
+        [1.1, false, false, true, "W", 5, 1, 1],
+        [1.1, false, false, false, "W", 6, 2, 1],
+        [1.6, true, false, false, "T", 1, 0, 0]
+      ]
+    }
+  ],
+  "conditional": {
+    "name": "after 30 rounds observed during WATCH (all 1.50x) the watch uses its conditional estimate: (count + 20 x baseline) / (30 + 20)",
+    "lows": 35,
+    "multiplier": 1.5,
+    "expected": {
+      "state": "elevated_range_watch",
+      "consecutiveLow": 35,
+      "watchForecast": 31,
+      "predictedRange": 1,
+      "basis": "conditional",
+      "conditionalSample": 30,
+      "probabilities": [0.806, 0.1164, 0.0388, 0.0388],
+      "targetProbability": 0.194
+    }
+  }
+}
